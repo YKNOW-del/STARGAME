@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>星轨厨房 · 移动版 v0.1</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; background: #04060d; overflow: hidden;
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; color: #dfe6ff; }
+  #stage { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  #topbar { position: absolute; top: 0; left: 0; right: 0; height: 54px; display: flex;
+    align-items: center; gap: 8px; padding: 0 10px;
+    background: linear-gradient(180deg, rgba(6,10,26,.94), rgba(6,10,26,.55) 80%, transparent); }
+  #lvlname { font-weight: bold; font-size: 14px; color: #ffd76a; white-space: nowrap; }
+  #stats { font-size: 11px; color: #aab6e8; white-space: nowrap; }
+  #stats b { color: #fff; }
+  #topbar .sp { flex: 1; }
+  .btn { background: rgba(70,90,180,.25); color: #dfe6ff; border: 1px solid rgba(130,150,255,.35);
+    border-radius: 8px; padding: 6px 12px; font-size: 14px; cursor: pointer; user-select: none; }
+  .btn:active { background: rgba(90,110,210,.45); }
+  .btn.big { font-size: 15px; padding: 10px 20px; }
+  .btn.gold { border-color: rgba(255,215,106,.6); color: #ffd76a; }
+  .btn:disabled { opacity: .35; }
+
+  #bottombar { position: absolute; left: 0; right: 0; bottom: 0; height: 176px;
+    background: linear-gradient(0deg, rgba(6,10,26,.94), rgba(6,10,26,.55) 80%, transparent);
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 10px; gap: 8px; }
+  #tools { display: flex; gap: 10px; }
+  #tools .btn { font-size: 13px; }
+  #tools .btn.active { background: rgba(255,215,106,.25); border-color: #ffd76a; color: #ffd76a; }
+  #pool { display: flex; gap: 10px; }
+  .card { width: 118px; height: 76px; border-radius: 12px; border: 2px solid rgba(120,140,255,.25);
+    background: rgba(10,16,38,.78); display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 5px; cursor: pointer; }
+  .card.sel { border-color: #ffd76a; box-shadow: 0 0 14px rgba(255,215,106,.35); }
+  .card .dot { width: 30px; height: 30px; border-radius: 50%; }
+  .card .nm { font-size: 13px; color: #cfd8ff; }
+  .card.var.ice { border-color: #9fe8ff; }
+  .card.var.pulse { border-color: #ffb37a; }
+
+  #toast { position: absolute; left: 50%; bottom: 196px; transform: translateX(-50%);
+    background: rgba(10,16,38,.92); border: 1px solid rgba(130,150,255,.35); color: #ffe9a8;
+    padding: 8px 16px; border-radius: 18px; font-size: 13px; opacity: 0; transition: opacity .25s;
+    pointer-events: none; white-space: nowrap; max-width: 92%; }
+  #toast.show { opacity: 1; }
+
+  #overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(3,5,12,.74); z-index: 10; }
+  #overlay.show { display: flex; }
+  .panel { background: rgba(10,16,38,.94); border: 1px solid rgba(130,150,255,.3); border-radius: 16px;
+    padding: 22px 18px; text-align: center; width: 86%; max-width: 520px; max-height: 92%; overflow-y: auto;
+    box-shadow: 0 10px 50px rgba(0,0,0,.6); }
+  .panel h1 { font-size: 30px; color: #ffd76a; letter-spacing: 5px; margin-bottom: 5px; }
+  .panel h2 { font-size: 20px; color: #ffd76a; margin-bottom: 10px; }
+  .panel .sub { color: #8896c8; font-size: 12.5px; margin-bottom: 14px; }
+  .levels { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 12px; }
+  .lvlbtn { width: 118px; padding: 9px 4px; border-radius: 10px; border: 1px solid rgba(130,150,255,.35);
+    background: rgba(20,30,64,.6); cursor: pointer; }
+  .lvlbtn.lock { opacity: .4; }
+  .lvlbtn .no { font-size: 10px; color: #8896c8; }
+  .lvlbtn .nm { font-size: 12px; font-weight: bold; color: #e8ecff; margin: 2px 0 4px; }
+  .lvlbtn .st { color: #ffd76a; font-size: 11px; letter-spacing: 2px; }
+  .row { display: flex; gap: 8px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+  .stat { font-size: 13px; color: #aab6e8; line-height: 1.9; }
+  .stat b { color: #fff; } .stat .gold { color: #ffd76a; }
+  .stars-big { font-size: 34px; color: #ffd76a; letter-spacing: 8px; margin: 4px 0 8px; }
+  .dexgrid { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .dexcell { width: 74px; padding: 7px 3px; border-radius: 9px; border: 1px solid rgba(130,150,255,.25);
+    background: rgba(20,30,64,.5); display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .dexcell .dot { width: 20px; height: 20px; border-radius: 50%; }
+  .dexcell .nm { font-size: 10px; color: #cfd8ff; }
+  .dexcell:not(.un) .nm { color: #5a6690; }
+  table.lb { margin: 0 auto; border-collapse: collapse; font-size: 12.5px; }
+  table.lb th, table.lb td { padding: 4px 8px; border-bottom: 1px solid rgba(130,150,255,.2); }
+  table.lb th { color: #8896c8; }
+  .panel input { color: #fff; border: 1px solid rgba(130,150,255,.4); background: rgba(10,16,38,.8);
+    border-radius: 6px; padding: 6px 10px; font-size: 14px; outline: none; }
+  .foot { margin-top: 10px; font-size: 10.5px; color: #5a6690; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv" width="900" height="1600"></canvas>
+  <div id="topbar" style="display:none">
+    <div>
+      <div id="lvlname"></div>
+      <div id="stats"></div>
+    </div>
+    <div class="sp"></div>
+    <button class="btn" id="bDex">📖</button>
+    <button class="btn" id="bSet">⚙</button>
+    <button class="btn" id="bPause">⏸</button>
+    <button class="btn" id="bMute">🔊</button>
+  </div>
+  <div id="bottombar" style="display:none">
+    <div id="tools">
+      <button class="btn" id="tDiscard">✕ 弃置 ×<b id="cDiscard">2</b></button>
+      <button class="btn" id="tSlide">↔ 滑移 ×<b id="cSlide">2</b></button>
+    </div>
+    <div id="pool"></div>
+  </div>
+  <div id="toast"></div>
+  <div id="overlay"></div>
+</div>
+<script src="core/starchef-core.js"></script>
+<script>
+'use strict';
+/* 星轨厨房 · 移动版壳（竖屏 900×1600，触屏）
+ * 业务规则全部来自平台无关核心模块 StarChef（NFR-M03 逻辑/渲染分离） */
+const C = StarChef;
+const CVW = 900, CVH = 1600;
+const CX = 450, CY = 780;
+const RADII = [104, 158, 212, 266];
+const CONST = { x: 40, y: 96, w: 820, h: 210 };
+
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const stage = document.getElementById('stage');
+const elTop = document.getElementById('topbar'), elBottom = document.getElementById('bottombar');
+const elLvl = document.getElementById('lvlname'), elStats = document.getElementById('stats');
+const elPool = document.getElementById('pool'), elToast = document.getElementById('toast');
+const elOverlay = document.getElementById('overlay');
+const elCD = document.getElementById('cDiscard'), elCS = document.getElementById('cSlide');
+const tDiscard = document.getElementById('tDiscard'), tSlide = document.getElementById('tSlide');
+const DPR = Math.min(2, window.devicePixelRatio || 1);
+cv.width = CVW * DPR; cv.height = CVH * DPR;
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const W = Math.min(w, h * 9 / 16);
+  stage.style.width = W + 'px'; stage.style.height = (W * 16 / 9) + 'px';
+}
+window.addEventListener('resize', resize); resize();
+
+let toastTimer = null;
+function toast(msg) {
+  elToast.textContent = msg; elToast.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => elToast.classList.remove('show'), 1900);
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+/* ---------- 存档（独立于桌面版） ---------- */
+const SAVE_KEY = 'starchef_mobile_v1';
+function loadSave() {
+  try { const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (s && typeof s.unlocked === 'number') {
+      s.dex = Array.isArray(s.dex) ? s.dex : [];
+      s.playerName = s.playerName || '';
+      s.leaderboard = Array.isArray(s.leaderboard) ? s.leaderboard : [];
+      s.stats = Object.assign({ totalDeliveredKg: 0, maxTier: 0 }, s.stats || {});
+      s.settings = Object.assign({ muted: false, colorblind: false, reducedMotion: false }, s.settings || {});
+      s.tut = s.tut || {};
+      return s;
+    } } catch (e) {}
+  return { unlocked: 1, stars: {}, best: {}, dex: [], playerName: '', leaderboard: [], tut: {},
+    stats: { totalDeliveredKg: 0, maxTier: 0 }, settings: { muted: false, colorblind: false, reducedMotion: false } };
+}
+let SAVE = loadSave();
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) {} }
+function totalBest() { return Object.values(SAVE.best).reduce((a, b) => a + b, 0); }
+function updateLeaderboard(name) {
+  if (!C.validName(name)) return false;
+  SAVE.playerName = name;
+  SAVE.leaderboard = SAVE.leaderboard.filter(e => e.name !== name);
+  SAVE.leaderboard.push({ name, totalMassKg: totalBest(), bestTier: SAVE.stats.maxTier || 0,
+    updatedAt: new Date().toISOString() });
+  SAVE.leaderboard.forEach(r => r.key = r.name + '|' + r.updatedAt);
+  SAVE.leaderboard.sort((a, b) => b.totalMassKg - a.totalMassKg);
+  SAVE.leaderboard = SAVE.leaderboard.slice(0, 20);
+  persist(); return true;
+}
+
+/* ---------- 音频（Web Audio 合成；BGM 移动版暂缺，见交付说明） ---------- */
+let AC = null;
+function ensureAudio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (AC && AC.state === 'suspended') AC.resume();
+  startBgm();
+}
+document.addEventListener('pointerdown', ensureAudio);
+function tone(f, dur, type, g, delay, slideTo) {
+  if (!AC || SAVE.settings.muted) return;
+  g = (g || .14) * .9; delay = delay || 0;
+  const t = AC.currentTime + delay;
+  const o = AC.createOscillator(), v = AC.createGain();
+  o.type = type || 'sine'; o.frequency.setValueAtTime(f, t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t + dur);
+  v.gain.setValueAtTime(.0001, t);
+  v.gain.linearRampToValueAtTime(g, t + .012);
+  v.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(v); v.connect(AC.destination); o.start(t); o.stop(t + dur + .06);
+}
+const sfx = {
+  click: () => tone(880, .05, 'sine', .05),
+  place: () => tone(320, .09, 'triangle', .12),
+  merge: (t, ci) => { const f = 740 * Math.pow(.92, t) * Math.pow(1.05, ci || 0);
+    tone(f, .18, 'triangle', .17); tone(f * 1.5, .12, 'sine', .07, .02); },
+  deliver: () => { tone(523, .12); tone(659, .14, 'sine', .14, .09); tone(784, .2, 'sine', .11, .18); },
+  warn: () => { tone(660, .09, 'square', .06); tone(660, .09, 'square', .06, 1); tone(660, .12, 'square', .07, 2); },
+  boom: () => { tone(110, .6, 'sawtooth', .2, 0, 40); tone(50, .9, 'sine', .28); },
+  crash: () => { tone(170, .8, 'sawtooth', .2, 0, 45); tone(60, 1.1, 'sine', .3, .05, 28); },
+  win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .3, 'sine', .13, i * .13)),
+};
+/* 环境音乐：Web Audio 合成低音铺底（音量恒低，静音开关控制） */
+let BGM = null;
+function startBgm() {
+  if (BGM || !AC || SAVE.settings.muted) return;
+  const g = AC.createGain(); g.gain.value = 0.028;
+  const flt = AC.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 900;
+  const oscs = [110, 164.81, 220].map((f, i) => {
+    const o = AC.createOscillator(); o.type = i === 2 ? 'sine' : 'triangle';
+    o.frequency.value = f; o.detune.value = (i - 1) * 4; o.connect(flt); o.start(); return o;
+  });
+  const lfo = AC.createOscillator(); lfo.frequency.value = 0.08;
+  const lg = AC.createGain(); lg.gain.value = 0.011;
+  lfo.connect(lg); lg.connect(g.gain); lfo.start();
+  flt.connect(g); g.connect(AC.destination);
+  BGM = { oscs, g, lfo };
+}
+function updateBgm() {
+  if (!BGM) { startBgm(); return; }
+  if (SAVE.settings.muted) { BGM.oscs.forEach(o => o.stop()); BGM.lfo.stop(); BGM = null; }
+}
+
+/* ---------- 布局几何 ---------- */
+function slotPos(k, i) { const a = C.slotAngle(k, i); return [CX + RADII[k] * Math.cos(a), CY + RADII[k] * Math.sin(a)]; }
+function bodyR(t) { return 11 + t * 2.9; }
+function starPos(oi, n) { return [CONST.x + CONST.w * (oi + .5) / n, CONST.y + CONST.h * .42]; }
+function easeOutBack(t) { const c = 1.70158; t = Math.min(1, Math.max(0, t)); return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); }
+function rnd(a, b) { return a + Math.random() * (b - a); }
+
+/* ---------- 对局状态 ---------- */
+let S = null, MODE = 'menu', vt = 0;
+function startLevel(idx) {
+  S = {
+    lvlIdx: idx, lvl: C.LEVELS[idx],
+    board: C.newBoard(),
+    pool: C.rollPool(C.LEVELS[idx]), sel: 0,
+    order: C.LEVELS[idx].order.map(o => ({ tier: o.tier, count: o.count, delivered: 0 })),
+    score: 0, reso: 0, loss: 0, drops: 0, discard: 2, slide: 2,
+    time: 0, driftAt: 6, nextMeteorAt: C.LEVELS[idx].meteor > 0 ? 14 : Infinity,
+    warns: [], tool: null, slideSrc: null,
+    parts: [], floats: [], merges: [], dels: [], rings: [], flashAt: -9,
+    shake: 0, _resoTmp: 0,
+  };
+  S.coach = (COACH[idx] && !SAVE.tut[idx + 1]) ? { steps: COACH[idx], idx: 0 } : null;
+  if (S.coach) S.coach.steps[0]._at = performance.now();
+  MODE = 'play';
+  elTop.style.display = 'flex'; elBottom.style.display = 'flex';
+  elOverlay.classList.remove('show');
+  elLvl.textContent = '第' + (idx + 1) + '关 · ' + S.lvl.name;
+  updateHUD();
+}
+function dexIdOf(b) { return C.dexIdOf(b); }
+function unlockDex(b) {
+  const id = dexIdOf(b);
+  if (SAVE.dex.includes(id)) return;
+  SAVE.dex.push(id);
+  SAVE.stats.maxTier = Math.max(SAVE.stats.maxTier || 0, b.t);
+  persist();
+  const e = C.DEX.find(d => d.id === id);
+  toast('📖 图鉴解锁：' + (e && e.name ? e.name : C.BODIES[b.t].name) + ' · ' + C.fmtMass(C.mass(b.t)));
+}
+
+/* ---------- 动作（核心规则走 C.*） ---------- */
+function resolveFx() {
+  let ci = 0;
+  const merges = C.resolveBoard(S.board, {
+    onMerge: m => {
+      const [ax, ay] = slotPos(m.from[0][0], m.from[0][1]);
+      const [bx, by] = slotPos(m.from[1][0], m.from[1][1]);
+      const [px, py] = slotPos(m.to[0], m.to[1]);
+      m.prod.born = S.time + .12;
+      S.merges.push({ ax, ay, bx, by, px, py, at: S.time, t: m.tier });
+      S._resoTmp += C.mass(m.product) * .1;
+      unlockDex(m.prod);
+      coachEvent('merged');
+      sfx.merge(m.tier, ci++);
+      if (m.devoured && m.devoured.length) {
+        let lossM = 0;
+        m.devoured.forEach(d => { lossM += C.mass(d.t); const [x, y] = slotPos(d.k, d.i); burst(x, y, '#b08cff', 14); });
+        S.loss += lossM;
+        S.rings.push({ x: px, y: py, at: S.time, dur: .9, r1: 130, color: '#b08cff', lw: 5 });
+        tone(140, .5, 'sine', .2, 0, 60);
+        toast('黑洞诞生！吞噬 ' + m.devoured.length + ' 个邻近天体（计入损失）');
+      }
+    }
+  });
+  return merges;
+}
+function afterAction() {
+  const cnt = resolveFx().length;
+  if (cnt >= 2 && S._resoTmp > 0) {
+    S.score += S._resoTmp; S.reso += S._resoTmp;
+    let last = S.merges[S.merges.length - 1];
+    S.floats.push({ x: last.px, y: last.py - 30, at: S.time, dur: 1.2,
+      text: '共振 +' + C.fmtMass(S._resoTmp), color: '#ffd76a', size: 18 });
+    S._resoTmp = 0;
+  } else if (cnt < 2) S._resoTmp = 0;
+  updateHUD(); checkEnd();
+}
+function place(k, i) {
+  if (S.board[k][i]) return;
+  if (C.isFrozenSlot(S.board, k, i)) { toast('该槽位被冰封，无法投放'); return; }
+  const it = S.pool[S.sel];
+  const b = { t: (it && it.t !== undefined) ? it.t : it, born: S.time };
+  if (it && it.v) b.v = it.v;
+  C.put(S.board, k, i, b);
+  S.drops++; sfx.place(); unlockDex(b);
+  coachEvent('placed');
+  S.pool = C.rollPool(S.lvl);
+  afterAction();
+}
+function deliver(k, i) {
+  const b = S.board[k][i];
+  const oi = C.deliverableIndex(S.order, b.t);
+  if (oi < 0) return false;
+  const o = S.order[oi];
+  o.delivered++;
+  S.score += C.mass(b.t);
+  SAVE.stats.totalDeliveredKg += C.mass(b.t);
+  const [x, y] = slotPos(k, i), [tx, ty] = starPos(oi, S.order.length);
+  S.dels.push({ x0: x, y0: y, x1: tx, y1: ty, at: S.time, t: b.t, oi });
+  S.floats.push({ x, y: y - 26, at: S.time, dur: 1.1, text: '+' + C.fmtMass(C.mass(b.t)), color: '#9fe8ff', size: 16 });
+  S.board[k][i] = null;
+  sfx.deliver(); persist(); updateHUD();
+  coachEvent('delivered');
+  return true;
+}
+function supernova(k, i) {
+  const [x, y] = slotPos(k, i);
+  S.board[k][i] = null;
+  C.neighborSlots(k, i).forEach(([kk, jj]) => {
+    const b = S.board[kk][jj]; if (!b) return;
+    if (b.t === 0) { S.board[kk][jj] = null; return; }
+    S.loss += C.mass(b.t) - C.mass(b.t - 1);
+    const [bx, by] = slotPos(kk, jj); burst(bx, by, '#ffcf7a', 12);
+    b.t--; b.born = S.time; unlockDex(b);
+  });
+  S.rings.push({ x, y, at: S.time, dur: .8, r1: 160, color: '#ffd76a', lw: 6 });
+  S.flashAt = S.time;
+  if (!SAVE.settings.reducedMotion) S.shake = .5;
+  sfx.boom(); toast('超新星爆发！太阳湮灭，邻近天体降级');
+  afterAction();
+}
+function detonatePulse(k, i) {
+  const [x, y] = slotPos(k, i);
+  S.board[k][i] = null;
+  let n = 0;
+  for (let j = 0; j < C.ORBITS[k]; j++) {
+    const b = S.board[k][j];
+    if (b && b.t <= 2) { S.loss += C.mass(b.t); const [bx, by] = slotPos(k, j);
+      burst(bx, by, '#bfe3ff', 10); S.board[k][j] = null; n++; }
+  }
+  S.rings.push({ x, y, at: S.time, dur: .7, r1: RADII[k] * .6, color: '#bfe3ff', lw: 5 });
+  S.flashAt = S.time;
+  if (!SAVE.settings.reducedMotion) S.shake = .4;
+  sfx.boom(); toast('脉冲星引爆！清除 ' + n + ' 个同轨小天体（计入损失）');
+  afterAction();
+}
+function checkEnd() {
+  if (C.orderDone(S.order)) {
+    MODE = 'winning'; S.wonAt = S.time + 1.1;
+    sfx.win();
+    for (let n = 0; n < 90; n++) S.parts.push({ x: rnd(80, 820), y: rnd(-80, 0),
+      vx: rnd(-30, 30), vy: rnd(60, 180), life: rnd(1.5, 2.6), t0: S.time,
+      color: ['#ffd76a', '#9fe8ff', '#c9a0ff', '#ff9f9f'][n % 4], r: rnd(2, 4) });
+    const stars = C.starCount(S.drops, S.loss, S.lvl);
+    SAVE.stars[S.lvlIdx] = Math.max(SAVE.stars[S.lvlIdx] || 0, stars);
+    SAVE.best[S.lvlIdx] = Math.max(SAVE.best[S.lvlIdx] || 0, S.score);
+    SAVE.unlocked = Math.max(SAVE.unlocked, Math.min(C.LEVELS.length, S.lvlIdx + 2));
+    persist();
+    return;
+  }
+  if (C.crashCondition(S.board, S.order, S.discard)) {
+    MODE = 'crashing'; S.crashAt = S.time + 1;
+    S.shake = .9; sfx.crash();
+  }
+}
+function burst(x, y, color, n) {
+  if (SAVE.settings.reducedMotion) n = Math.max(2, Math.floor(n * .3));
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = rnd(40, 190);
+    S.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rnd(.4, .9), t0: S.time, color, r: rnd(1.5, 3.5) });
+  }
+}
+
+/* ---------- 轻量教练（第 1–3 关，事件推进；可跳过式弱引导） ---------- */
+const COACH = {
+  0: [
+    { text: '点下方候选卡选天体，再点轨道上的空槽位投放', wait: 'placed' },
+    { text: '点带金色圆圈的小行星完成交付，点亮星座', wait: 'delivered' },
+    { text: '把下一颗同级天体放到它旁边，看自动合成与外迁！', wait: 'merged' },
+    { text: '订单还差 1 颗小行星——靠自己完成吧 ✨', wait: 'any' },
+  ],
+  1: [
+    { text: '顶部订单星座显示需求；槽位出现红圈时，3 秒后陨石命中', wait: 'warn-shown' },
+    { text: '本关订单：小行星×2＋月球×1，小心陨石！', wait: 'any' },
+  ],
+  2: [
+    { text: '脱困道具：↔滑移可挪天体断开相邻；✕弃置可移除（计入损失）', wait: 'any' },
+    { text: '彗星每 5 秒漂移一格——留出余量，完成火星订单！', wait: 'any' },
+  ],
+};
+function coachEvent(name) {
+  if (!S || !S.coach) return;
+  const st = S.coach.steps[S.coach.idx];
+  if (st && st.wait === name) coachAdvance();
+}
+function coachAdvance() {
+  if (!S || !S.coach) return;
+  S.coach.idx++;
+  if (S.coach.idx >= S.coach.steps.length) {
+    SAVE.tut[S.lvlIdx + 1] = 1; persist(); S.coach = null;
+  } else S.coach.steps[S.coach.idx]._at = performance.now();
+}
+document.addEventListener('pointerdown', e => {
+  if (!S || !S.coach || MODE !== 'play') return;
+  if (e.target.closest && (e.target.closest('.btn') || e.target.closest('.card'))) return;
+  const st = S.coach.steps[S.coach.idx];
+  if (st && st.wait === 'any' && performance.now() - (st._at || 0) > 400) coachAdvance();
+}, true);
+
+/* ---------- 战绩海报（FR-901/902，竖版 1080×1440） ---------- */
+function starPath2(g, x, y, R) {
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? R * .45 : R, a = -Math.PI / 2 + i * Math.PI / 5;
+    const px = x + r * Math.cos(a), py = y + r * Math.sin(a);
+    i ? g.lineTo(px, py) : g.moveTo(px, py);
+  }
+  g.closePath();
+}
+function makePoster() {
+  try {
+    const c = document.createElement('canvas'); c.width = 1080; c.height = 1440;
+    const g = c.getContext('2d');
+    const bg = g.createLinearGradient(0, 0, 0, 1440);
+    bg.addColorStop(0, '#0a1030'); bg.addColorStop(1, '#05070f');
+    g.fillStyle = bg; g.fillRect(0, 0, 1080, 1440);
+    for (let i = 0; i < 170; i++) {
+      g.fillStyle = 'rgba(255,255,255,' + (0.15 + Math.random() * .5).toFixed(2) + ')';
+      g.beginPath(); g.arc(Math.random() * 1080, Math.random() * 1440, Math.random() * 1.8 + .4, 0, 6.29); g.fill();
+    }
+    [[300, 380, '120,80,200'], [780, 980, '60,120,180']].forEach(([x, y, cc]) => {
+      const rg = g.createRadialGradient(x, y, 0, x, y, 430);
+      rg.addColorStop(0, 'rgba(' + cc + ',.3)'); rg.addColorStop(1, 'rgba(' + cc + ',0)');
+      g.fillStyle = rg; g.fillRect(0, 0, 1080, 1440);
+    });
+    g.textAlign = 'center';
+    g.fillStyle = '#ffd76a'; g.font = 'bold 84px sans-serif';
+    g.fillText('星 轨 厨 房', 540, 180);
+    g.font = '27px sans-serif'; g.fillStyle = '#aab6e8';
+    g.fillText('轨道合成 × 订单交付 · 战绩海报（移动版）', 540, 236);
+    const n = S.order.length;
+    const pts = S.order.map((o, i) => [140 + 800 * (i + .5) / n, 470, o]);
+    g.strokeStyle = 'rgba(160,180,255,.5)'; g.lineWidth = 3; g.beginPath();
+    pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke();
+    pts.forEach(([x, y, o]) => {
+      const done = o.delivered >= o.count;
+      g.save();
+      if (done) { g.shadowColor = '#ffd76a'; g.shadowBlur = 26; }
+      starPath2(g, x, y, 34);
+      g.fillStyle = done ? '#ffd76a' : 'rgba(120,135,190,.4)'; g.fill();
+      g.restore();
+      g.fillStyle = '#dfe6ff'; g.font = '25px sans-serif';
+      g.fillText(C.BODIES[o.tier].name + ' ' + o.delivered + '/' + o.count, x, y + 70);
+    });
+    const stars = C.starCount(S.drops, S.loss, S.lvl);
+    g.fillStyle = '#ffe9a8'; g.font = 'bold 46px sans-serif';
+    g.fillText('★'.repeat(stars) + '☆'.repeat(3 - stars), 540, 800);
+    g.fillStyle = '#fff'; g.font = '40px sans-serif';
+    g.fillText('总质量 ' + C.fmtMass(S.score), 540, 880);
+    const earths = S.score / C.ME;
+    if (earths >= .01) {
+      g.fillStyle = '#9fe8ff'; g.font = '34px sans-serif';
+      g.fillText('你的宇宙重 ' + earths.toFixed(2) + ' 个地球', 540, 938);
+    }
+    g.fillStyle = '#aab6e8'; g.font = '30px sans-serif';
+    g.fillText('最大天体 ' + C.BODIES[SAVE.stats.maxTier || 0].name + ' · 投放 ' + S.drops + ' · 损失 ' + C.fmtMass(S.loss), 540, 1010);
+    g.fillText('第' + (S.lvlIdx + 1) + '关 · ' + S.lvl.name, 540, 1068);
+    g.fillStyle = '#7d89b8'; g.font = '26px sans-serif';
+    g.fillText((SAVE.playerName ? SAVE.playerName + ' · ' : '') + new Date().toLocaleDateString('zh-CN'), 540, 1140);
+    c.toBlob(b => {
+      const url = URL.createObjectURL(b);
+      const a = document.createElement('a');
+      a.href = url; a.download = '星轨厨房战绩海报.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      const w = window.open(url, '_blank');
+      toast(w ? '海报已生成（新标签页已打开，可长按保存）' : '海报已生成并尝试下载');
+    }, 'image/png');
+  } catch (e) { toast('海报生成失败：' + (e && e.message)); }
+}
+function wrapText(text, maxW, font) {
+  ctx.font = font; const lines = []; let cur = '';
+  for (const ch of text) {
+    if (ctx.measureText(cur + ch).width > maxW && cur) { lines.push(cur); cur = ch; } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function drawCoach() {
+  if (!S || !S.coach) return;
+  const st = S.coach.steps[S.coach.idx]; if (!st) return;
+  const font = '15px sans-serif';
+  let lines = wrapText(st.text, 560, font);
+  if (st.wait === 'any') lines = lines.concat(['▾ 点击任意处继续 ▾']);
+  ctx.font = font;
+  let tw = 0; lines.forEach(l => tw = Math.max(tw, ctx.measureText(l).width));
+  const bw = tw + 30, bh = lines.length * 22 + 24;
+  const bx = Math.max(24, Math.min(CVW - 24 - bw, CX - bw / 2)), by = 1156 - bh;
+  ctx.fillStyle = 'rgba(12,20,46,.95)'; ctx.strokeStyle = 'rgba(255,215,106,.7)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 12); ctx.fill(); ctx.stroke();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  lines.forEach((l, i) => {
+    ctx.fillStyle = i === lines.length - 1 && st.wait === 'any' ? 'rgba(160,175,225,.9)' : '#ffe9a8';
+    ctx.fillText(l, bx + 15, by + 10 + i * 22);
+  });
+  ctx.fillStyle = 'rgba(150,165,215,.75)'; ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
+  ctx.fillText((S.coach.idx + 1) + '/' + S.coach.steps.length, bx + bw - 10, by + bh - 15);
+}
+
+/* ---------- 每帧更新 ---------- */
+function update(dt) {
+  S.time += dt;
+  if (S.time >= S.driftAt) {
+    S.driftAt = S.time + 5;
+    let moved = false;
+    for (let k = 0; k < 4; k++) for (let i = 0; i < C.ORBITS[k]; i++) {
+      const b = S.board[k][i];
+      if (b && b.t === 1) { const j = (i + 1) % C.ORBITS[k];
+        if (!S.board[k][j]) { S.board[k][j] = b; S.board[k][i] = null; moved = true; } }
+    }
+    if (moved) { if (resolveFx().length) { S._resoTmp = 0; updateHUD(); checkEnd(); } }
+  }
+  if (S.time >= S.nextMeteorAt) {
+    S.nextMeteorAt = S.time + S.lvl.meteor;
+    const occ = [];
+    for (let k = 0; k < 4; k++) for (let i = 0; i < C.ORBITS[k]; i++) if (S.board[k][i]) occ.push([k, i]);
+    if (occ.length) {
+      const [k, i] = occ[Math.floor(Math.random() * occ.length)];
+      S.warns.push({ k, i, start: S.time, impact: S.time + 3 });
+      sfx.warn();
+      coachEvent('warn-shown');
+    }
+  }
+  for (let n = S.warns.length - 1; n >= 0; n--) {
+    const w = S.warns[n];
+    if (S.time >= w.impact) {
+      S.warns.splice(n, 1);
+      const b = S.board[w.k][w.i];
+      if (b) {
+        const [x, y] = slotPos(w.k, w.i);
+        if (b.t === 0) S.board[w.k][w.i] = null;
+        else { S.loss += C.mass(b.t) - C.mass(b.t - 1); b.t--; b.born = S.time; unlockDex(b); }
+        burst(x, y, '#ff9f6a', 16);
+        S.rings.push({ x, y, at: S.time, dur: .5, r1: 60, color: '#ff8a5a', lw: 4 });
+        if (!SAVE.settings.reducedMotion) S.shake = Math.max(S.shake, .3);
+        tone(180, .25, 'sawtooth', .12, 0, 70);
+        if (resolveFx().length) S._resoTmp = 0;
+        updateHUD();
+      }
+    }
+  }
+  updateFx(dt);
+  if (MODE === 'winning' && S.time >= S.wonAt) { MODE = 'won'; showWin(); }
+  if (MODE === 'crashing' && S.time >= S.crashAt) { MODE = 'crash'; showCrash(); }
+}
+function updateFx(dt) {
+  for (let n = S.parts.length - 1; n >= 0; n--) { const p = S.parts[n];
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .99; p.vy *= .99;
+    if (S.time - p.t0 > p.life) S.parts.splice(n, 1); }
+  for (let n = S.floats.length - 1; n >= 0; n--) if (S.time - S.floats[n].at > S.floats[n].dur) S.floats.splice(n, 1);
+  for (let n = S.merges.length - 1; n >= 0; n--) if (S.time - S.merges[n].at > .5) S.merges.splice(n, 1);
+  for (let n = S.dels.length - 1; n >= 0; n--) if (S.time - S.dels[n].at > .62) S.dels.splice(n, 1);
+  for (let n = S.rings.length - 1; n >= 0; n--) if (S.time - S.rings[n].at > S.rings[n].dur) S.rings.splice(n, 1);
+  S.shake = Math.max(0, S.shake - dt * 1.4);
+}
+
+/* ---------- HUD ---------- */
+function updateHUD() {
+  elStats.innerHTML = '质量 <b>' + C.fmtMass(S.score) + '</b> · 投 <b>' + S.drops + '/' + S.lvl.maxDrops +
+    '</b> · 损失 <b>' + C.fmtMass(S.loss) + '</b>';
+  elCD.textContent = S.discard; elCS.textContent = S.slide;
+  tDiscard.disabled = S.discard <= 0; tSlide.disabled = S.slide <= 0;
+  let html = '';
+  for (let i = 0; i < 3; i++) {
+    const it = S.pool[i];
+    const t = (it && it.t !== undefined) ? it.t : it;
+    const v = it && it.v;
+    const b = C.BODIES[t];
+    html += '<div class="card' + (i === S.sel ? ' sel' : '') + (v ? ' var ' + v : '') + '" data-i="' + i + '">' +
+      '<span class="dot" style="background:radial-gradient(circle at 35% 35%, ' + b.c1 + ', ' + b.c2 + ')"></span>' +
+      '<span class="nm">' + b.name + (v === 'ice' ? ' ❄' : v === 'pulse' ? ' ⚡' : '') + '</span></div>';
+  }
+  elPool.innerHTML = html;
+}
+elPool.addEventListener('click', e => {
+  const c = e.target.closest('.card'); if (!c || MODE !== 'play') return;
+  S.sel = +c.dataset.i; sfx.click(); updateHUD();
+});
+tDiscard.addEventListener('click', () => { if (MODE !== 'play' || S.discard <= 0) return;
+  S.tool = S.tool === 'discard' ? null : 'discard'; S.slideSrc = null;
+  if (S.tool) toast('弃置：点击要移除的天体'); sfx.click(); refreshToolBtns(); });
+tSlide.addEventListener('click', () => { if (MODE !== 'play' || S.slide <= 0) return;
+  S.tool = S.tool === 'slide' ? null : 'slide'; S.slideSrc = null;
+  if (S.tool) toast('潮汐滑移：选择天体 → 同轨道空槽'); sfx.click(); refreshToolBtns(); });
+function refreshToolBtns() {
+  tDiscard.classList.toggle('active', S && S.tool === 'discard');
+  tSlide.classList.toggle('active', S && S.tool === 'slide');
+}
+
+/* ---------- 触屏输入 ---------- */
+function canvasXY(e) {
+  const r = cv.getBoundingClientRect();
+  return [(e.clientX - r.left) * CVW / r.width, (e.clientY - r.top) * CVH / r.height];
+}
+function hitSlot(x, y) {
+  let best = null, bd = 1e9;
+  for (let k = 0; k < 4; k++) for (let i = 0; i < C.ORBITS[k]; i++) {
+    const [sx, sy] = slotPos(k, i);
+    const b = S.board[k][i];
+    const d = Math.hypot(x - sx, y - sy);
+    const th = Math.max(34, (b ? bodyR(b.t) : 10) + 16);   // 触屏命中半径放大
+    if (d < th && d < bd) { bd = d; best = [k, i]; }
+  }
+  return best;
+}
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (!S || MODE !== 'play') return;
+  const [x, y] = canvasXY(e);
+  const hit = hitSlot(x, y);
+  if (!hit) { if (S.tool) { S.tool = null; S.slideSrc = null; refreshToolBtns(); } return; }
+  const [k, i] = hit, b = S.board[k][i];
+  if (S.tool === 'discard' && b) {
+    S.loss += C.mass(b.t); S.board[k][i] = null; S.discard--; S.tool = null;
+    const [sx, sy] = slotPos(k, i); burst(sx, sy, '#ff8a8a', 12);
+    toast('已弃置 ' + C.BODIES[b.t].name + '（计入损失）');
+    tone(200, .18, 'sawtooth', .1, 0, 80);
+    updateHUD(); refreshToolBtns(); return;
+  }
+  if (S.tool === 'slide') {
+    if (b) { if (b.t === 14) { toast('黑洞无法被移动'); return; }
+      S.slideSrc = [k, i]; toast('再点击同一轨道的空槽位完成滑移'); return; }
+    if (S.slideSrc) {
+      const [sk, si] = S.slideSrc;
+      if (sk !== k) { toast('只能沿同一轨道移动'); return; }
+      if (C.isFrozenSlot(S.board, k, i)) { toast('目标槽位被冰封'); return; }
+      if (C.pathClear(S.board, sk, si, i)) {
+        S.board[k][i] = S.board[sk][si]; S.board[sk][si] = null;
+        S.slide--; S.tool = null; S.slideSrc = null;
+        const [sx, sy] = slotPos(k, i);
+        S.rings.push({ x: sx, y: sy, at: S.time, dur: .4, r1: 44, color: '#9fe8ff', lw: 3 });
+        tone(520, .12, 'sine', .1);
+        refreshToolBtns(); afterAction(); return;
+      } else { toast('路径被阻挡'); return; }
+    }
+    toast('先选择要移动的天体'); return;
+  }
+  if (!b) { place(k, i); return; }
+  if (deliver(k, i)) { checkEnd(); return; }
+  if (b.t === 13) { if (b.v === 'pulse') detonatePulse(k, i); else supernova(k, i); return; }
+  if (b.t === 14) { toast('黑洞只能作为终章订单目标交付'); return; }
+  toast('当前订单不需要 ' + C.BODIES[b.t].name);
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden && MODE === 'play') pauseGame(); });
+
+/* ---------- 覆盖层 ---------- */
+function starStr(n) { return '★'.repeat(n) + '☆'.repeat(3 - n); }
+function showMenu() {
+  MODE = 'menu'; S = null;
+  elTop.style.display = 'none'; elBottom.style.display = 'none';
+  let lv = '';
+  for (let i = 0; i < C.LEVELS.length; i++) {
+    const lock = i + 1 > SAVE.unlocked, st = SAVE.stars[i] || 0;
+    lv += '<div class="lvlbtn' + (lock ? ' lock' : '') + '" data-act="level" data-i="' + i + '">' +
+      '<div class="no">第 ' + (i + 1) + ' 关' + (SAVE.best[i] ? ' · ' + C.fmtMass(SAVE.best[i]) : '') + '</div>' +
+      '<div class="nm">' + C.LEVELS[i].name + '</div>' +
+      '<div class="st">' + (lock ? '🔒 未解锁' : starStr(st)) + '</div></div>';
+  }
+  elOverlay.innerHTML = '<div class="panel"><h1>星轨厨房</h1>' +
+    '<div class="sub">移动版 v0.1（竖屏触屏 · 复用平台无关核心模块）</div>' +
+    '<div class="levels">' + lv + '</div>' +
+    '<div class="row"><button class="btn" data-act="dex">📖 图鉴 ' + SAVE.dex.length + '/' + C.DEX.length + '</button>' +
+    '<button class="btn" data-act="board">🏆 排行榜</button>' +
+    '<button class="btn" data-act="settings">⚙ 设置</button></div>' +
+    '<div class="foot">提示：点候选 → 点空槽投放 → 相邻同级自动合成 → 点金圈天体交付点亮星座</div></div>';
+  elOverlay.classList.add('show');
+}
+function showPause() {
+  elOverlay.innerHTML = '<div class="panel"><h2>已暂停</h2>' +
+    '<div class="row"><button class="btn big gold" data-act="resume">继续</button>' +
+    '<button class="btn big" data-act="restart">重开</button>' +
+    '<button class="btn big" data-act="menu">菜单</button></div>' +
+    '<div class="row"><button class="btn" data-act="dex-p">📖 图鉴</button>' +
+    '<button class="btn" data-act="settings-p">⚙ 设置</button></div></div>';
+  elOverlay.classList.add('show');
+}
+function showWin() {
+  const s = C.starCount(S.drops, S.loss, S.lvl);
+  const line = S.reso > 0
+    ? '交付 <b>' + C.fmtMass(S.score - S.reso) + '</b> ＋ 共振 <b class="gold">' + C.fmtMass(S.reso) + '</b> ＝ <b class="gold">' + C.fmtMass(S.score) + '</b>'
+    : '总质量 <b class="gold">' + C.fmtMass(S.score) + '</b>';
+  const earths = S.score / C.ME;
+  elOverlay.innerHTML = '<div class="panel"><h2>星座点亮！</h2>' +
+    '<div class="stars-big">' + starStr(s) + '</div>' +
+    '<div class="stat">' + line + (earths >= .01 ? '<br>你的宇宙重 <b>' + earths.toFixed(2) + '</b> 个地球' : '') + '<br>' +
+    '投放 <b>' + S.drops + '/' + S.lvl.maxDrops + '</b>' + (S.drops <= S.lvl.maxDrops ? ' ✓' : ' ✗') +
+    ' · 损失 <b>' + C.fmtMass(S.loss) + '</b>' + (S.loss <= S.lvl.maxLossKg ? ' ✓' : ' ✗') + '</div>' +
+    '<div class="stat" style="margin-top:6px">署名 <input id="winName" maxlength="12" value="' + esc(SAVE.playerName) + '"> 将记入本地排行榜</div>' +
+    '<div class="row">' +
+    '<button class="btn big" data-act="poster">🖼 海报</button>' +
+    (S.lvlIdx + 1 < C.LEVELS.length ? '<button class="btn big gold" data-act="level" data-i="' + (S.lvlIdx + 1) + '">下一关</button>' : '') +
+    '<button class="btn big" data-act="restart">再来一次</button>' +
+    '<button class="btn big" data-act="menu">菜单</button></div></div>';
+  elOverlay.classList.add('show');
+}
+function showCrash() {
+  elOverlay.innerHTML = '<div class="panel"><h2 style="color:#ff8a8a">引力崩溃</h2>' +
+    '<div class="sub">轨道已满，且没有可交付或可弃置的出路</div>' +
+    '<div class="row"><button class="btn big gold" data-act="restart">重新开始（无惩罚）</button>' +
+    '<button class="btn big" data-act="menu">菜单</button></div></div>';
+  elOverlay.classList.add('show');
+}
+function showDex(fromPause) {
+  let cells = '';
+  C.DEX.forEach(e => {
+    const un = SAVE.dex.includes(e.id);
+    cells += '<div class="dexcell' + (un ? ' un' : '') + '" data-dex="' + e.id + '">' +
+      '<span class="dot" style="background:radial-gradient(circle at 35% 35%, ' + (un ? C.BODIES[e.t].c1 : '#3a4358') + ', ' + (un ? C.BODIES[e.t].c2 : '#232a3d') + ')"></span>' +
+      '<span class="nm">' + (un ? (e.name || C.BODIES[e.t].name) : '？？？') + '</span></div>';
+  });
+  elOverlay.innerHTML = '<div class="panel"><h2>📖 宇宙图鉴　' + SAVE.dex.length + '/' + C.DEX.length + '</h2>' +
+    '<div class="dexgrid">' + cells + '</div>' +
+    '<div id="dexdetail" class="stat" style="margin-top:10px;min-height:44px;text-align:left">点击条目查看科普</div>' +
+    '<div class="row"><button class="btn big" data-act="' + (fromPause ? 'back-pause' : 'menu') + '">' + (fromPause ? '返回暂停' : '返回菜单') + '</button></div></div>';
+  elOverlay.classList.add('show');
+}
+function showBoard() {
+  const rows = SAVE.leaderboard.slice().sort((a, b) => b.totalMassKg - a.totalMassKg).slice(0, 10);
+  const html = rows.length
+    ? '<table class="lb"><tr><th>#</th><th>玩家</th><th>总质量</th><th>最大</th><th></th></tr>' +
+      rows.map((r, ix) => '<tr><td>' + (ix + 1) + '</td><td>' + esc(r.name) + '</td><td>' + C.fmtMass(r.totalMassKg) +
+        '</td><td>' + C.BODIES[r.bestTier || 0].name + '</td>' +
+        '<td><button class="btn" data-del="' + esc(r.key || r.name + '|' + r.updatedAt) + '">✕</button></td></tr>').join('') + '</table>'
+    : '<div class="sub">暂无记录——通关并署名后上榜</div>';
+  elOverlay.innerHTML = '<div class="panel"><h2>🏆 本地排行榜</h2>' + html +
+    '<div class="stat" style="margin-top:8px">当前档案（' + esc(SAVE.playerName || '未署名') + '）：' + C.fmtMass(totalBest()) + '</div>' +
+    '<div class="row"><button class="btn big" data-act="menu">返回菜单</button></div></div>';
+  elOverlay.classList.add('show');
+}
+function showSettings(fromPause) {
+  const st = SAVE.settings;
+  elOverlay.innerHTML = '<div class="panel"><h2>⚙ 设置</h2>' +
+    '<div class="stat" style="text-align:left;line-height:2.6">' +
+    '玩家名 <input id="setName" maxlength="12" value="' + esc(SAVE.playerName) + '"><br>' +
+    '<button class="btn" id="setMute">' + (st.muted ? '🔇 已静音' : '🔊 声音开启') + '</button> ' +
+    '<button class="btn" id="setCb">' + (st.colorblind ? '✓ ' : '') + '色弱模式</button> ' +
+    '<button class="btn" id="setRm">' + (st.reducedMotion ? '✓ ' : '') + '减动效</button></div>' +
+    '<div class="row"><button class="btn big" data-act="' + (fromPause ? 'back-pause' : 'menu') + '">' + (fromPause ? '返回暂停' : '返回菜单') + '</button></div></div>';
+  elOverlay.classList.add('show');
+  const nm = document.getElementById('setName');
+  nm.addEventListener('change', () => {
+    const v = nm.value.trim();
+    if (!v) { persist(); return; }
+    if (C.validName(v)) { SAVE.playerName = v; persist(); toast('玩家名已保存'); }
+    else { nm.value = SAVE.playerName; toast('玩家名需为 1–12 位中文/字母/数字/下划线'); }
+  });
+  document.getElementById('setMute').addEventListener('click', e => {
+    SAVE.settings.muted = !SAVE.settings.muted; persist(); updateMuteIcon(); updateBgm();
+    e.target.textContent = SAVE.settings.muted ? '🔇 已静音' : '🔊 声音开启';
+  });
+  document.getElementById('setCb').addEventListener('click', e => {
+    SAVE.settings.colorblind = !SAVE.settings.colorblind; persist();
+    e.target.textContent = (SAVE.settings.colorblind ? '✓ ' : '') + '色弱模式';
+  });
+  document.getElementById('setRm').addEventListener('click', e => {
+    SAVE.settings.reducedMotion = !SAVE.settings.reducedMotion; persist();
+    e.target.textContent = (SAVE.settings.reducedMotion ? '✓ ' : '') + '减动效';
+  });
+}
+elOverlay.addEventListener('click', e => {
+  const dc = e.target.closest('[data-dex]');
+  if (dc) {
+    const en = C.DEX.find(d => d.id === dc.dataset.dex);
+    const el = document.getElementById('dexdetail');
+    if (el) el.innerHTML = SAVE.dex.includes(en.id)
+      ? '<b>' + (en.name || C.BODIES[en.t].name) + '</b>（等级 ' + en.t + ' · ' + C.fmtMass(C.mass(en.t)) + '）<br>' + esc(en.fact)
+      : '？？？——首次出现在场上即解锁';
+    return;
+  }
+  const del = e.target.closest('[data-del]');
+  if (del) { const key = del.dataset.del;
+    SAVE.leaderboard = SAVE.leaderboard.filter(r => (r.key || r.name + '|' + r.updatedAt) !== key);
+    persist(); showBoard(); return; }
+  const t = e.target.closest('[data-act]'); if (!t) return;
+  const act = t.dataset.act; sfx.click();
+  const wn = document.getElementById('winName');
+  if (wn) { const v = wn.value.trim();
+    if (C.validName(v)) updateLeaderboard(v);
+    else if (v) toast('玩家名非法，未记入排行榜'); }
+  if (act === 'resume') { MODE = 'play'; elOverlay.classList.remove('show'); }
+  else if (act === 'restart') startLevel(S ? S.lvlIdx : 0);
+  else if (act === 'menu') showMenu();
+  else if (act === 'level') startLevel(+t.dataset.i);
+  else if (act === 'back-pause') showPause();
+  else if (act === 'poster') makePoster();
+  else if (act === 'dex' || act === 'dex-p') showDex(act === 'dex-p');
+  else if (act === 'board') showBoard();
+  else if (act === 'settings' || act === 'settings-p') showSettings(act === 'settings-p');
+});
+function pauseGame() { if (MODE === 'play') { MODE = 'pause'; showPause(); } }
+function updateMuteIcon() { document.getElementById('bMute').textContent = SAVE.settings.muted ? '🔇' : '🔊'; }
+document.getElementById('bPause').addEventListener('click', pauseGame);
+document.getElementById('bDex').addEventListener('click', () => { if (S) { pauseGame(); showDex(true); } });
+document.getElementById('bSet').addEventListener('click', () => { if (S) { pauseGame(); showSettings(true); } });
+document.getElementById('bMute').addEventListener('click', () => {
+  SAVE.settings.muted = !SAVE.settings.muted; persist(); updateMuteIcon(); updateBgm();
+});
+
+/* ---------- 渲染 ---------- */
+const bgStars = [];
+for (let i = 0; i < 260; i++) bgStars.push({ x: Math.random() * CVW, y: Math.random() * CVH,
+  r: rnd(.5, 1.8), tw: rnd(.5, 2.5), ph: rnd(0, 6.28), layer: Math.random() < .5 ? 0 : 1 });
+
+function drawBackground(p) {
+  const g = ctx.createLinearGradient(0, 0, 0, CVH);
+  g.addColorStop(0, '#070b1c'); g.addColorStop(.6, '#05070f'); g.addColorStop(1, '#03040a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, CVW, CVH);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  [[220, 380, '90,60,180'], [700, 1100, '40,120,170'], [450, 800, '150,80,140']].forEach(([x, y, c], i) => {
+    const a = (.05 + .16 * p) * (1 + .3 * Math.sin(vt * .3 + i * 2));
+    const rg = ctx.createRadialGradient(x, y, 0, x, y, 300);
+    rg.addColorStop(0, 'rgba(' + c + ',' + a.toFixed(3) + ')'); rg.addColorStop(1, 'rgba(' + c + ',0)');
+    ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x, y, 300, 0, 6.29); ctx.fill();
+  });
+  ctx.restore();
+  bgStars.forEach(s => {
+    const base = s.layer === 0 ? .35 : .6;
+    const a = Math.min(1, base * (.5 + .5 * Math.sin(vt * s.tw + s.ph)) + (s.layer ? .35 * p : .15 * p));
+    ctx.fillStyle = 'rgba(255,255,255,' + a.toFixed(3) + ')';
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.29); ctx.fill();
+  });
+}
+function drawSun() {
+  const pr = 1 + .04 * Math.sin(vt * 2);
+  ctx.save();
+  ctx.shadowColor = '#ffb300'; ctx.shadowBlur = 40;
+  const g = ctx.createRadialGradient(CX, CY, 4, CX, CY, 52 * pr);
+  g.addColorStop(0, '#fffde7'); g.addColorStop(.55, '#ffcf33'); g.addColorStop(1, '#f5a300');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(CX, CY, 46 * pr, 0, 6.29); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,215,106,.25)';
+  ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(CX, CY, 56 * pr, 0, 6.29); ctx.stroke();
+}
+function drawBody(x, y, r, t, alpha, v) {
+  ctx.save(); ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  if (t === 13) { ctx.shadowColor = '#ffd54f'; ctx.shadowBlur = 24; }
+  const g = ctx.createRadialGradient(x - r * .35, y - r * .35, r * .12, x, y, r);
+  g.addColorStop(0, C.BODIES[t].c1); g.addColorStop(1, C.BODIES[t].c2);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
+  ctx.shadowBlur = 0;
+  if (t === 1) {
+    const dx = x - CX, dy = y - CY, L = Math.hypot(dx, dy) || 1;
+    const tg = ctx.createLinearGradient(x, y, x + dx / L * 32, y + dy / L * 32);
+    tg.addColorStop(0, 'rgba(160,230,255,.55)'); tg.addColorStop(1, 'rgba(160,230,255,0)');
+    ctx.strokeStyle = tg; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx / L * 32, y + dy / L * 32); ctx.stroke();
+  }
+  if (t === 11) { ctx.strokeStyle = 'rgba(255,246,200,.8)'; ctx.lineWidth = 3;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-.45);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.55, r * .5, 0, 0, 6.29); ctx.stroke(); ctx.restore(); }
+  if (t === 12) { ctx.save(); ctx.beginPath(); ctx.arc(x, y, r * .96, 0, 6.29); ctx.clip();
+    ctx.strokeStyle = 'rgba(140,60,30,.45)'; ctx.lineWidth = r * .18;
+    [-.45, .15, .6].forEach(o => { ctx.beginPath();
+      ctx.moveTo(x - r, y + r * o); ctx.quadraticCurveTo(x, y + r * o + r * .12, x + r, y + r * o); ctx.stroke(); });
+    ctx.restore(); }
+  if (t === 14) { ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
+    ctx.strokeStyle = 'rgba(200,150,255,.85)'; ctx.lineWidth = 3.2;
+    ctx.beginPath(); ctx.ellipse(x, y, r * 1.4, r * .55, -.5, 0, 6.29); ctx.stroke(); }
+  if (v === 'ice') { ctx.strokeStyle = 'rgba(210,242,255,.9)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, r * 1.18, 0, 6.29); ctx.stroke(); ctx.lineWidth = 1.6;
+    for (let s = 0; s < 6; s++) { const a = s * Math.PI / 3 + .3;
+      ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * r * .35, y + Math.sin(a) * r * .35);
+      ctx.lineTo(x + Math.cos(a) * r * .92, y + Math.sin(a) * r * .92); ctx.stroke(); } }
+  if (v === 'pulse') { ctx.strokeStyle = 'rgba(190,225,255,.75)'; ctx.lineWidth = 2;
+    for (let s = 0; s < 6; s++) { const a = vt * 2.2 + s * Math.PI / 3;
+      ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * r * .95, y + Math.sin(a) * r * .95);
+      ctx.lineTo(x + Math.cos(a) * r * 1.55, y + Math.sin(a) * r * 1.55); ctx.stroke(); } }
+  ctx.restore();
+}
+function drawBoard() {
+  for (let k = 0; k < 4; k++) {
+    ctx.strokeStyle = 'rgba(160,180,255,.12)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(CX, CY, RADII[k], 0, 6.29); ctx.stroke();
+    for (let i = 0; i < C.ORBITS[k]; i++) {
+      if (S.board[k][i]) continue;
+      const [x, y] = slotPos(k, i);
+      if (C.isFrozenSlot(S.board, k, i)) {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = 'rgba(159,232,255,.30)'; ctx.strokeStyle = 'rgba(200,240,255,.75)'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.rect(-7, -7, 14, 14); ctx.fill(); ctx.stroke(); ctx.restore();
+      } else {
+        ctx.fillStyle = 'rgba(200,215,255,.20)';
+        ctx.beginPath(); ctx.arc(x, y, 3.4, 0, 6.29); ctx.fill();
+      }
+    }
+  }
+  S.warns.forEach(w => {
+    const [x, y] = slotPos(w.k, w.i);
+    const el = (S.time - w.start) / 3, a = .5 + .5 * Math.sin(S.time * 9);
+    ctx.strokeStyle = 'rgba(255,90,60,' + (.4 + .5 * a).toFixed(3) + ')'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, 16 + 6 * a, 0, 6.29); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,90,60,.9)'; ctx.lineWidth = 3.4;
+    ctx.beginPath(); ctx.arc(x, y, 23, -Math.PI / 2, -Math.PI / 2 + 6.283 * (1 - el)); ctx.stroke();
+  });
+  for (let k = 0; k < 4; k++) for (let i = 0; i < C.ORBITS[k]; i++) {
+    const b = S.board[k][i]; if (!b) continue;
+    const [x, y] = slotPos(k, i);
+    const sc = easeOutBack((S.time - b.born) / .28);
+    if (sc <= 0) continue;
+    drawBody(x, y, bodyR(b.t) * sc, b.t, undefined, b.v);
+    if (C.canDeliver(S.order, b.t)) {
+      const a = .45 + .3 * Math.sin(vt * 5);
+      ctx.strokeStyle = 'rgba(255,215,106,' + a.toFixed(3) + ')'; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.arc(x, y, bodyR(b.t) + 6, 0, 6.29); ctx.stroke();
+    } else if (b.t === 13) {
+      const a = .4 + .3 * Math.sin(vt * 5);
+      ctx.strokeStyle = 'rgba(255,150,70,' + a.toFixed(3) + ')'; ctx.lineWidth = 2.4; ctx.setLineDash([6, 5]);
+      ctx.beginPath(); ctx.arc(x, y, bodyR(b.t) + 7, 0, 6.29); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (SAVE.settings.colorblind) {
+      const r = bodyR(b.t) * sc;
+      ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(x, y, r + 2, 0, 6.29); ctx.stroke();
+      ctx.fillStyle = 'rgba(8,12,28,.92)';
+      ctx.beginPath(); ctx.arc(x + r * .72, y - r * .72, 9, 0, 6.29); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(b.t), x + r * .72, y - r * .72 + .5);
+    }
+  }
+}
+function drawEffects() {
+  S.merges.forEach(m => {
+    const t = (S.time - m.at) / .4; if (t < 0 || t > 1) return;
+    const ea = 1 - t;
+    drawBody(m.ax, m.ay, bodyR(m.t) * ea, m.t, ea);
+    drawBody(m.bx, m.by, bodyR(m.t) * ea, m.t, ea);
+    ctx.strokeStyle = 'rgba(255,240,200,' + ea.toFixed(3) + ')'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(m.px, m.py, 14 + 40 * t, 0, 6.29); ctx.stroke();
+  });
+  S.dels.forEach(d => {
+    const t = Math.min(1, (S.time - d.at) / .6);
+    const x = d.x0 + (d.x1 - d.x0) * t, y = d.y0 + (d.y1 - d.y0) * t - Math.sin(t * Math.PI) * 60;
+    drawBody(x, y, bodyR(d.t) * .8, d.t, 1 - t * .3);
+  });
+  S.rings.forEach(r0 => {
+    const t = (S.time - r0.at) / r0.dur; if (t < 0 || t > 1) return;
+    ctx.strokeStyle = r0.color; ctx.globalAlpha = 1 - t; ctx.lineWidth = r0.lw * (1 - t * .5);
+    ctx.beginPath(); ctx.arc(r0.x, r0.y, 10 + r0.r1 * t, 0, 6.29); ctx.stroke(); ctx.globalAlpha = 1;
+  });
+  S.parts.forEach(p => {
+    const t = (S.time - p.t0) / p.life; if (t < 0 || t > 1) return;
+    ctx.globalAlpha = 1 - t; ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.29); ctx.fill(); ctx.globalAlpha = 1;
+  });
+  S.floats.forEach(f => {
+    const t = (S.time - f.at) / f.dur; if (t < 0 || t > 1) return;
+    ctx.globalAlpha = 1 - t * t;
+    ctx.font = 'bold ' + (f.size || 15) + 'px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3;
+    ctx.strokeText(f.text, f.x, f.y - 34 * t);
+    ctx.fillStyle = f.color || '#fff'; ctx.fillText(f.text, f.x, f.y - 34 * t);
+    ctx.globalAlpha = 1;
+  });
+  const ft = (S.time - S.flashAt) / .3;
+  if (ft >= 0 && ft < 1) {
+    ctx.fillStyle = 'rgba(255,250,230,' + ((SAVE.settings.reducedMotion ? .15 : .5) * (1 - ft)).toFixed(3) + ')';
+    ctx.fillRect(0, 0, CVW, CVH);
+  }
+}
+function starPath(x, y, R) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 === 0 ? R : R * .45, a = -Math.PI / 2 + i * Math.PI / 5;
+    const px = x + r * Math.cos(a), py = y + r * Math.sin(a);
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+function drawConstellation() {
+  const R = CONST, n = S.order.length;
+  ctx.fillStyle = 'rgba(10,16,38,.5)'; ctx.strokeStyle = 'rgba(120,150,255,.22)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(R.x - 16, R.y - 40, R.w + 32, R.h + 78, 12); ctx.fill(); ctx.stroke();
+  ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffd76a'; ctx.fillText('✦ 订单星座', R.x + R.w / 2, R.y - 22);
+  ctx.strokeStyle = 'rgba(160,180,255,.3)'; ctx.lineWidth = 1.6; ctx.beginPath();
+  S.order.forEach((o, i) => { const [x, y] = starPos(i, n); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.stroke();
+  S.order.forEach((o, i) => {
+    const [x, y] = starPos(i, n);
+    const done = o.delivered >= o.count;
+    if (done) { ctx.save(); ctx.shadowColor = '#ffd76a'; ctx.shadowBlur = 16; }
+    starPath(x, y, 15);
+    ctx.fillStyle = done ? '#ffd76a' : 'rgba(120,135,190,.35)'; ctx.fill();
+    if (done) ctx.restore();
+    for (let d = 0; d < o.count; d++) {
+      ctx.fillStyle = d < o.delivered ? '#ffd76a' : 'rgba(130,145,200,.4)';
+      ctx.beginPath(); ctx.arc(x - (o.count - 1) * 5 + d * 10, y + 26, 3, 0, 6.29); ctx.fill();
+    }
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = done ? '#ffe9a8' : '#aab6e8';
+    ctx.fillText(C.BODIES[o.tier].name + (o.count > 1 ? '×' + o.count : '') + ' ' + o.delivered + '/' + o.count, x, y + 44);
+  });
+}
+function render() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const p = S ? S.order.reduce((a, o) => a + o.delivered, 0) / S.order.reduce((a, o) => a + o.count, 0) : .12;
+  drawBackground(S ? p : .12);
+  ctx.save();
+  if (S && S.shake > 0 && !SAVE.settings.reducedMotion)
+    ctx.translate(rnd(-1, 1) * S.shake * 8, rnd(-1, 1) * S.shake * 8);
+  drawSun();
+  if (S) {
+    drawBoard(); drawEffects(); drawConstellation(); drawCoach();
+    // 关卡提示条（移动版以静态提示替代交互教程）
+    ctx.font = '12.5px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(125,137,184,.9)';
+    ctx.fillText(S.lvl.hint, CX, 340);
+    // 进度条
+    ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(120, 70, 660, 5);
+    ctx.fillStyle = '#ffd76a'; ctx.fillRect(120, 70, 660 * p, 5);
+  } else {
+    for (let k = 0; k < 4; k++) {
+      ctx.strokeStyle = 'rgba(160,180,255,.10)'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(CX, CY, RADII[k], 0, 6.29); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  vt += dt;
+  if (S && MODE === 'play') update(dt);
+  else if (S && (MODE === 'winning' || MODE === 'crashing')) {
+    S.time += dt; updateFx(dt);
+    if (MODE === 'winning' && S.time >= S.wonAt) { MODE = 'won'; showWin(); }
+    if (MODE === 'crashing' && S.time >= S.crashAt) { MODE = 'crash'; showCrash(); }
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+updateMuteIcon();
+showMenu();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
