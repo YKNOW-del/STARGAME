@@ -4,11 +4,9 @@
  */
 'use strict';
 import React, { useMemo, useState } from 'react';
-import { View } from 'react-native';
-import { Canvas, Circle, Group, Rect, RoundedRect } from '@shopify/react-native-skia';
-import { C } from './engine.js';
-import engMod from './engine.js';
-const { LAYOUT, slotPos, bodyR } = engMod;
+import { PixelRatio, View } from 'react-native';
+import { Canvas, Circle, Fill, Group, Rect, RoundedRect } from '@shopify/react-native-skia';
+import { C, LAYOUT, slotPos, bodyR } from './engine.js';
 
 const BG_STARS = Array.from({ length: 130 }, () => ({
   x: Math.random() * LAYOUT.W, y: Math.random() * LAYOUT.H,
@@ -20,7 +18,11 @@ function bodyHi(t) { return C.BODIES[t].c1; }
 
 export default function GameCanvas({ eng, frame, onToast }) {
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const scale = size.w ? size.w / LAYOUT.W : 0;
+  const pr = PixelRatio.get();
+  const fit = size.w ? (() => {
+    const sc = Math.min(size.w / LAYOUT.W, size.h / LAYOUT.H);
+    return { sc, ox: (size.w - LAYOUT.W * sc) / 2, oy: (size.h - LAYOUT.H * sc) / 2 };
+  })() : { sc: 0, ox: 0, oy: 0 };
 
   const board = eng.S ? eng.S.board : null;
   const t = eng.S ? eng.S.time : 0;
@@ -38,19 +40,23 @@ export default function GameCanvas({ eng, frame, onToast }) {
     }
   }
 
+  if (size.w && !GameCanvas._logged) { GameCanvas._logged = 1; console.log('[DBG] size', JSON.stringify(size), 'fit', fit.sc.toFixed(3)); }
   return (
     <View
       style={{ flex: 1 }}
-      onLayout={e => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+      onLayout={e => setSize({ w: e.nativeEvent.layout.width * pr, h: e.nativeEvent.layout.height * pr })}
+      onTouchStart={e => {
+        console.log('[TCH]', JSON.stringify(e.nativeEvent.touches[0] || e.nativeEvent.changedTouches[0] || {}));
+        if (!fit.sc || !eng.S) return;
+        const { locationX, locationY } = e.nativeEvent.touches[0] || e.nativeEvent.changedTouches[0];
+        if (locationX === undefined) return;
+        eng.tapBoard((locationX * pr - fit.ox) / fit.sc, (locationY * pr - fit.oy) / fit.sc);
+      }}
+      onStartShouldSetResponder={() => true}
     >
-      <Canvas
-        style={{ flex: 1 }}
-        onTouchStart={e => {
-          if (!scale) return;
-          const { x, y } = e;
-          eng.tapBoard(x / scale, y / scale);
-        }}
-      >
+      <Canvas style={{ flex: 1 }} mode="continuous">
+        <Rect x={0} y={0} width={size.w || 10} height={size.h || 10} color="rgba(255,0,0,0.18)" />
+        {fit.sc > 0 && <Group transform={[{ translateX: fit.ox }, { translateY: fit.oy }, { scale: fit.sc }]}>
         {/* 背景 */}
         <Rect x={0} y={0} width={LAYOUT.W} height={LAYOUT.H} color="#05070f" />
         <Circle cx={220} cy={380} r={300} color="rgba(90,60,180,0.16)" />
@@ -69,7 +75,7 @@ export default function GameCanvas({ eng, frame, onToast }) {
           <Circle key={'o' + k} cx={LAYOUT.CX} cy={LAYOUT.CY} r={R}
             color="rgba(160,180,255,.14)" style="stroke" strokeWidth={1.4} />
         ))}
-        {board && LAYOUT.RADII.map((R, k) =>
+        {board && LAYOUT.RADII.flatMap((R, k) =>
           Array.from({ length: C.ORBITS[k] }, (_, i) => {
             const [x, y] = slotPos(k, i);
             const frozen = !board[k][i] && C.isFrozenSlot(board, k, i);
@@ -130,6 +136,7 @@ export default function GameCanvas({ eng, frame, onToast }) {
           <Rect x={0} y={0} width={LAYOUT.W} height={LAYOUT.H}
             color={'rgba(255,250,230,' + (0.4 * (1 - (t - eng.S.flashAt) / 0.3)).toFixed(3) + ')'} />
         )}
+        </Group>}
       </Canvas>
     </View>
   );

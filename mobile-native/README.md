@@ -1,52 +1,36 @@
-# 星轨厨房 · React Native 原生版骨架（v0.1）
+# 星轨厨房 · React Native + Skia 原生版（已在本机编译出 APK）
 
-真原生路线：**业务逻辑跑在 Hermes JS 引擎（非 WebView），渲染走 @shopify/react-native-skia（Skia 原生绘制）**。
-业务规则 100% 复用平台无关核心模块 `src/core/starchef-core.js`（与移动网页版同源，Node 测试 15/15 通过）。
+真原生路线：业务逻辑跑在 Hermes JS 引擎（非 WebView），渲染走 @shopify/react-native-skia。
+业务规则 100% 复用平台无关核心 `src/core/starchef-core.js`（Node 测试 15 项全绿）。
 
-## 目录
+**2026-10-20 实测状态（本机 Pixel 9 Pro API36 模拟器）**：
+✅ Gradle 编译通过、`app-release.apk`（86MB，自带 JS，免 Metro）安装后独立启动，RN 原生 UI（菜单/顶栏/候选池/弹窗）渲染正常；
+✅ 触摸→引擎事件链验证通过（点击候选、点击槽位投放均有事件落地）；
+⚠️ **Skia 画布在模拟器上无像素输出**（连单个纯色 Fill 都不显示；swiftshader 后端直接 SIGSEGV、ANGLE 后端静默失败）——判定为模拟器图形栈问题而非代码问题，**待真机 GPU 验证**。
 
-```
-mobile-native/
-├── App.js                 # 界面层：菜单/对局/图鉴/排行榜/胜利与崩溃弹窗
-├── index.js / app.json / babel.config.js / metro.config.js / package.json
-└── src/
-    ├── core/starchef-core.js   # 平台无关核心（数据+规则+纯函数，UMD）
-    └── game/
-        ├── engine.js           # 游戏引擎（状态机+动作+tick，框架无关，Node 已冒烟验证）
-        └── GameCanvas.js       # Skia 渲染层（基础图元：圆/矩形/组）
-```
-
-## 如何跑起来（需要你本机执行）
-
-骨架未在本环境做过真机/模拟器验证（无 Android SDK / Xcode），以下步骤在你机器上完成：
+## 本机可复现构建（已验证的完整路径）
 
 ```bash
-# 1. 用 RN 官方模板初始化原生工程（提供 android/ ios/ 目录）
-npx @react-native-community/cli@latest init StarChef --version 0.76.5
-
-# 2. 把本目录的 App.js、index.js、app.json、babel.config.js、metro.config.js
-#    覆盖进新工程根目录，src/ 整个拷过去
-
-# 3. 安装依赖
-cd StarChef
-npm i @shopify/react-native-skia@^1.8 @react-native-async-storage/async-storage@^2
-
-# 4. 运行（Android 需已装 Android Studio/SDK；iOS 需 Mac + Xcode，并 pod install）
-npm run android     # 或 npm run ios
+# 0) 工程必须放在纯 ASCII 路径（AGP 拒绝中文路径），例如 D:\StarChefBuild\StarChef
+# 1) 环境（本机实际值）：
+#    JAVA_HOME = D:\APP\AS\jbr（Android Studio 自带 JDK21）
+#    ANDROID SDK = D:\WORK\sdk（platform-tools、platforms;android-34/35、build-tools;34/35.0.0）
+#    node 在 D:\nodejs；npm 已配 npmmirror 镜像
+#    gradle 分发已换腾讯镜像（android/gradle/wrapper/gradle-wrapper.properties）
+# 2) 依赖
+npm install
+# 3) Debug（连模拟器/真机 + Metro）
+npx react-native run-android
+# 4) Release APK（自带 JS，debug 签名，可直接侧载）
+cd android && gradlew.bat assembleRelease
+# 产物：android/app/build/outputs/apk/release/app-release.apk
 ```
 
-> 注意：`package.json` 里预置了依赖版本供参考；init 生成的工程自带匹配的 react/react-native 版本，以它为准。
+已知工程要点：`android/local.properties`（含本机 SDK 路径）不入库，克隆后需自建：`sdk.dir=D:/WORK/sdk`；
+模拟器无头启动参考：`emulator -avd Pixel_9_Pro -no-window -gpu angle_indirect -skin 1080x2340`（swiftshader 会崩 Skia）。
 
-## 已实现 / 待补
+## 待办（真机验证后）
 
-已实现：10 关三章关卡与全部核心规则（合成外迁/交付/共振/三星/崩溃/弃置/滑移/陨石/超新星/脉冲星/黑洞终章/冰封）、
-候选池、订单星座条、图鉴解锁、本地排行榜与署名（AsyncStorage）、暂停、胜利/崩溃结算。
-
-待补（下版）：音频（建议 expo-av 或 react-native-sound）、粒子与浮动文字特效、
-战绩海报（可用 react-native-view-shot 或 Skia 离屏导出）、轻量教练教程、色弱/减动效模式。
-
-## 架构说明（答辩可讲）
-
-- 分层：`core（纯逻辑，无平台依赖）→ engine（状态机，框架无关）→ UI（RN+Skia）`；
-- 同一份 core 同时驱动移动网页版（`mobile/星轨厨房MOBILE.html`）与本原生版，逻辑零重复；
-- core 的 Node 测试（`mobile/core/core.test.js`）在任何平台跑同一套规则回归。
+- 真机确认 Skia 画布渲染（预期正常——模拟器 ANGLE/swiftshader 呈现缺陷）
+- 补音频（expo-av）、粒子特效、教练教程、战绩海报、色弱/减动效
+- Skia `mode="continuous"` 为 deprecated（v1.12 仍生效）——若真机声明式重绘正常可移除

@@ -6,8 +6,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { SafeAreaView, View, Text, TouchableOpacity, FlatList, TextInput, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { makeEngine, C } from './game/engine.js';
-import GameCanvas from './game/GameCanvas.js';
+import { makeEngine, C } from './src/game/engine.js';
+import GameCanvas from './src/game/GameCanvas.js';
 
 const SAVE_KEY = 'starchef_native_v1';
 const storage = {
@@ -197,6 +197,7 @@ function Menu({ eng, onPlay, onDex, onBoard }) {
           const lock = i + 1 > S.unlocked, stars = S.stars[i] || 0;
           return (
             <TouchableOpacity key={i} style={[st.lvlBtn, lock && { opacity: 0.4 }]} disabled={lock}
+              accessible={true} accessibilityLabel={'level_' + i}
               onPress={() => { eng.startLevel(i); onPlay(); }}>
               <Text style={{ color: '#8896c8', fontSize: 10 }}>第 {i + 1} 关</Text>
               <Text style={{ color: '#e8ecff', fontSize: 12, fontWeight: 'bold', marginVertical: 2 }}>{lv.name}</Text>

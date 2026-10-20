@@ -4,3 +4,8 @@ node_modules/
 Thumbs.db
 .vscode/
 .idea/
+
+# 构建产物不入库
+*.apk
+*.aab
+rnbuild/
