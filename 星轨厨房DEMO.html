@@ -244,12 +244,14 @@ function loadSave() {
       s.dex = Array.isArray(s.dex) ? s.dex : [];
       s.playerName = typeof s.playerName === 'string' ? s.playerName : '';
       s.leaderboard = Array.isArray(s.leaderboard) ? s.leaderboard : [];
+      s.endlessBoard = Array.isArray(s.endlessBoard) ? s.endlessBoard : [];
+      s.dailyBoard = Array.isArray(s.dailyBoard) ? s.dailyBoard : [];
       s.stats = Object.assign({ totalDeliveredKg: 0, maxCombo: 0, maxTier: 0 }, s.stats || {});
       s.settings = Object.assign({}, DEF_SETTINGS, s.settings || {});
       s.settings.muted = (s.settings && s.settings.muted !== undefined) ? s.settings.muted : !!s.muted;
       return s;
     } } catch (e) {}
-  return { unlocked:1, stars:{}, best:{}, dex:[], playerName:'', leaderboard:[],
+  return { unlocked:1, stars:{}, best:{}, dex:[], playerName:'', leaderboard:[], endlessBoard:[], dailyBoard:[],
            stats:{ totalDeliveredKg:0, maxCombo:0, maxTier:0 }, settings:Object.assign({}, DEF_SETTINGS) };
 }
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) {} }
@@ -342,6 +344,19 @@ function toast(msg) {
 function slotPos(k, i) { const a = slotAngle(k, i); return [CX + RADII[k] * Math.cos(a), CY + RADII[k] * Math.sin(a)]; }
 function easeOutBack(t) { const c = 1.70158; t = Math.min(1, Math.max(0, t)); return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); }
 function rnd(a, b) { return a + Math.random() * (b - a); }
+/* mulberry32：种子随机（每日挑战确定性，FR-1201） */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function cnDateStr() { const d = new Date(Date.now() + 8 * 3600e3);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0'); }
+function dailySeed() { return parseInt(cnDateStr().replace(/-/g, ''), 10); }
 function bodyR(t) { return 11 + t * 2.9; }
 
 /* =============== 游戏状态 =============== */
@@ -350,8 +365,8 @@ let MODE = 'menu';     // menu | play | pause | winning | crashing | won | crash
 let vt = 0;            // 视觉时钟（菜单也走）
 let hover = null, mouse = [0, 0];
 
-const pickTier = lvl => C.pickTier(lvl);
-const maybeVariant = t => C.maybeVariant(S.lvl, t);
+const pickTier = lvl => C.pickTier(lvl, S && S.rng);
+const maybeVariant = t => C.maybeVariant(S.lvl, t, S && S.rng);
 function rollPool() { S.pool = [maybeVariant(pickTier(S.lvl)), maybeVariant(pickTier(S.lvl)), maybeVariant(pickTier(S.lvl))]; }
 /* 冰封判定（FR-204）：空槽的左右相邻存在冰卫星即被冻结（派生计算，冰卫星离场自动解冻） */
 const isFrozen = (k, i) => C.isFrozenSlot(S.board, k, i);
@@ -383,7 +398,7 @@ function updateLeaderboard(name) {
 
 function startLevel(idx) {
   S = {
-    lvlIdx: idx, lvl: LEVELS[idx],
+    mode: 'campaign', lvlIdx: idx, lvl: LEVELS[idx],
     board: ORBITS.map(n => Array(n).fill(null)),
     pool: [], sel: 0,
     order: LEVELS[idx].order.map(o => ({ tier:o.tier, count:o.count, delivered:0, litAt:-1 })),
@@ -405,6 +420,51 @@ function startLevel(idx) {
   S.tut = (TUT[idx + 1] && !SAVE.tut[idx + 1]) ? { steps: TUT[idx + 1], idx: -1, mark: null } : null;
   if (S.tut) advanceTut();
   refreshTutSkip();
+}
+
+/* =============== 无尽模式（FR-1202）与每日挑战（FR-1201） =============== */
+function baseState(mode, lvl) {
+  return {
+    mode, lvlIdx: 0, lvl,
+    board: C.newBoard(),
+    pool: [], sel: 0,
+    order: (lvl.order || []).map(o => ({ tier: o.tier, count: o.count, delivered: 0, litAt: -1 })),
+    score: 0, reso: 0, loss: 0, drops: 0, discard: 2, slide: 2,
+    time: 0, driftAt: 6, _resoTmp: 0, maxCombo: 0,
+    nextMeteorAt: lvl.meteor > 0 ? 12 : Infinity,
+    warns: [], tool: null, slideSrc: null,
+    parts: [], floats: [], merges: [], dels: [], rings: [], flashAt: -9,
+    shake: 0, crashAt: 0, wonAt: 0, rng: null, dateStr: '', tut: null,
+  };
+}
+function enterGame(st, hint) {
+  S = st; rollPool(); MODE = 'play';
+  elTop.style.display = 'flex'; elBottom.style.display = 'flex';
+  elOverlay.classList.remove('show');
+  elLvl.textContent = S.lvl.name;
+  elHint.textContent = hint;
+  refreshTutSkip(); updateHUD();
+}
+function startEndless() {
+  const lvl = { name: '♾ 无尽模式', pool: [0, 2], order: [],
+    maxDrops: Infinity, maxLossKg: Infinity, meteor: 30, variants: [] };
+  enterGame(baseState('endless', lvl),
+    '无尽模式：点击任意天体回收质量并腾出槽位 · 全部槽位占满即崩溃 · 候选池随投放递进');
+}
+function startDaily() {
+  const seed = dailySeed(), rng = mulberry32(seed);
+  const rr = (a, b) => a + Math.floor(rng() * (b - a + 1));
+  const t1 = 2 + Math.floor(rng() * 9), t2 = 2 + Math.floor(rng() * 9);
+  const order = [{ tier: t1, count: rr(1, 2) }, { tier: t2, count: rr(1, 2) }];
+  if (order[0].tier === order[1].tier) order[1].count += 1;
+  const minT = Math.max(0, Math.min(t1, t2) - 1), maxT = Math.max(t1, t2);
+  const dmin = C.dMin({ pool: [minT, maxT], order });
+  const lvl = { name: '📅 每日挑战 · ' + cnDateStr(), pool: [minT, maxT], order,
+    maxDrops: Math.ceil(1.6 * dmin) + 2, maxLossKg: 0.25 * order.reduce((a, o) => a + C.mass(o.tier) * o.count, 0),
+    meteor: 20 + (seed % 11), variants: [] };
+  const st = baseState('daily', lvl);
+  st.rng = rng; st.dateStr = cnDateStr();
+  enterGame(st, '每日挑战：今日同题（日期种子生成，重开同题）· 成绩计入每日榜');
 }
 
 /* =============== 棋盘逻辑 =============== */
@@ -444,13 +504,22 @@ function afterAction() {
       text: '共振 +' + fmtMass(S._resoTmp), color: '#ffd76a', size: 18 });
     S._resoTmp = 0;
   } else if (r.cnt < 2) S._resoTmp = 0;
+  if (r.cnt > S.maxCombo) S.maxCombo = r.cnt;
   updateHUD();
   checkEnd();
 }
-const canDeliver = t => C.canDeliver(S.order, t);
+const canDeliver = t => S.mode === 'endless' ? true : C.canDeliver(S.order, t);
 
 function deliver(k, i) {
   const b = S.board[k][i];
+  if (S.mode === 'endless') {           // 无尽：任意交付回收质量（FR-1202）
+    S.score += mass(b.t);
+    const [x, y] = slotPos(k, i);
+    S.dels.push({ x0: x, y0: y, x1: CONST_RECT.x + CONST_RECT.w / 2, y1: CONST_RECT.y + 40, at: S.time, t: b.t, oi: -1 });
+    S.floats.push({ x, y: y - 26, at: S.time, dur: 1.1, text: '+' + fmtMass(mass(b.t)), color: '#9fe8ff', size: 16 });
+    S.board[k][i] = null; sfx.deliver(); updateHUD();
+    return true;
+  }
   const oi = S.order.findIndex(o => o.tier === b.t && o.delivered < o.count);
   if (oi < 0) return false;
   const o = S.order[oi];
@@ -503,18 +572,23 @@ function detonatePulse(k, i) {
   toast('脉冲星引爆！清除了 ' + n + ' 个同轨小天体（计入损失）');
   afterAction();
 }
-const crashCondition = () => C.crashCondition(S.board, S.order, S.discard);
+const crashCondition = () => S.mode === 'endless'
+  ? S.board.every(orb => orb.every(Boolean))   // 无尽：全部槽位占用即崩溃
+  : C.crashCondition(S.board, S.order, S.discard);
 function checkEnd() {
-  if (S.order.every(o => o.delivered >= o.count)) {
+  if (S.mode !== 'endless' && S.order.length > 0 && S.order.every(o => o.delivered >= o.count)) {
     MODE = 'winning'; S.wonAt = S.time + 1.1;
     sfx.win();
     for (let n = 0; n < 90; n++) S.parts.push({ x: rnd(200,1400), y: rnd(-80,0),
       vx: rnd(-30,30), vy: rnd(60,180), life: rnd(1.5,2.6), t0: S.time,
       color: ['#ffd76a','#9fe8ff','#c9a0ff','#ff9f9f'][n % 4], r: rnd(2,4) });
-    const stars = starCount();
-    SAVE.stars[S.lvlIdx] = Math.max(SAVE.stars[S.lvlIdx] || 0, stars);
-    SAVE.best[S.lvlIdx] = Math.max(SAVE.best[S.lvlIdx] || 0, S.score);
-    SAVE.unlocked = Math.max(SAVE.unlocked, Math.min(LEVELS.length, S.lvlIdx + 2));
+    if (S.mode === 'campaign') {
+      const stars = starCount();
+      SAVE.stars[S.lvlIdx] = Math.max(SAVE.stars[S.lvlIdx] || 0, stars);
+      SAVE.best[S.lvlIdx] = Math.max(SAVE.best[S.lvlIdx] || 0, S.score);
+      SAVE.unlocked = Math.max(SAVE.unlocked, Math.min(LEVELS.length, S.lvlIdx + 2));
+    }
+    SAVE.stats.maxCombo = Math.max(SAVE.stats.maxCombo || 0, S.maxCombo);
     persist();
     if (S.tut) finishTutorial();
     return;
@@ -559,7 +633,7 @@ function update(dt) {
     const occ = [];
     for (let k = 0; k < 4; k++) for (let i = 0; i < ORBITS[k]; i++) if (S.board[k][i]) occ.push([k, i]);
     if (occ.length) {
-      const [k, i] = occ[Math.floor(Math.random() * occ.length)];
+      const [k, i] = occ[Math.floor((S.rng ? S.rng() : Math.random()) * occ.length)];
       S.warns.push({ k, i, start: S.time, impact: S.time + 3 });
       sfx.warn();
       tutEvent('warn-shown');
@@ -595,15 +669,17 @@ function updateFx(dt) {
   for (let n = S.floats.length - 1; n >= 0; n--) if (S.time - S.floats[n].at > S.floats[n].dur) S.floats.splice(n, 1);
   for (let n = S.merges.length - 1; n >= 0; n--) if (S.time - S.merges[n].at > .5) S.merges.splice(n, 1);
   for (let n = S.dels.length - 1; n >= 0; n--) { const d = S.dels[n];
-    if (S.time - d.at > .62) { S.order[d.oi].litAt = S.time; S.dels.splice(n, 1); } }
+    if (S.time - d.at > .62) { if (d.oi >= 0 && S.order[d.oi]) S.order[d.oi].litAt = S.time; S.dels.splice(n, 1); } }
   for (let n = S.rings.length - 1; n >= 0; n--) if (S.time - S.rings[n].at > S.rings[n].dur) S.rings.splice(n, 1);
   S.shake = Math.max(0, S.shake - dt * 1.4);
 }
 
 /* =============== HUD =============== */
 function updateHUD() {
-  elStats.innerHTML = '质量 <b>' + fmtMass(S.score) + '</b> · 投放 <b>' + S.drops + '/' + S.lvl.maxDrops +
-    '</b> · 损失 <b>' + fmtMass(S.loss) + '</b>';
+  elStats.innerHTML = '质量 <b>' + fmtMass(S.score) + '</b> · 投放 <b>' + S.drops +
+    (isFinite(S.lvl.maxDrops) ? '/' + S.lvl.maxDrops : '') +
+    '</b> · 损失 <b>' + fmtMass(S.loss) + '</b>' +
+    (S.mode === 'endless' ? ' · 空槽 <b>' + S.board.flat().filter(c => !c).length + '</b>' : '');
   elCD.textContent = S.discard; elCS.textContent = S.slide;
   tDiscard.disabled = S.discard <= 0; tSlide.disabled = S.slide <= 0;
   let html = '';
@@ -701,6 +777,10 @@ function placeExtra(k, i) {
   S.board[k][i] = b;
   S.drops++; sfx.place();
   unlockDex(b);
+  if (S.mode === 'endless') {
+    const nt = Math.min(13, 2 + Math.floor(S.drops / 8));
+    if (nt > S.lvl.pool[1]) { S.lvl.pool[1] = nt; toast('候选池扩展：可投放至 ' + C.BODIES[nt].name); }
+  }
   if (S.tut) { const st = S.tut.steps[S.tut.idx]; if (st && st.mark) S.tut.mark = [k, i]; }
   rollPool();
   afterAction();
@@ -767,17 +847,26 @@ function showDex(fromPause) {
     '<div class="row">' + panelBack(fromPause) + '</div></div>';
   elOverlay.classList.add('show');
 }
+function lbTable(rows) {
+  if (!rows.length) return '<div class="sub" style="margin:4px 0 10px">暂无记录</div>';
+  return '<table class="lb"><tr><th>#</th><th>玩家</th><th>质量</th><th>备注</th><th></th></tr>' +
+    rows.map((r, ix) => '<tr><td>' + (ix + 1) + '</td><td>' + r.name + '</td><td>' + r.kg +
+      '</td><td>' + r.extra + '</td><td><button class="btn" data-del="' + esc(r.key) + '">✕</button></td></tr>').join('') + '</table>';
+}
 function showBoard() {
-  const rows = SAVE.leaderboard.slice().sort((a, b) => b.totalMassKg - a.totalMassKg).slice(0, 10);
-  let html;
-  if (rows.length) {
-    html = '<table class="lb"><tr><th>#</th><th>玩家</th><th>总质量</th><th>最大天体</th><th>更新</th><th></th></tr>' +
-      rows.map((r, ix) => '<tr><td>' + (ix + 1) + '</td><td>' + esc(r.name) + '</td><td>' + fmtMass(r.totalMassKg) +
-        '</td><td>' + BODIES[r.bestTier || 0].name + '</td><td>' + (r.updatedAt || '').slice(5, 10) +
-        '</td><td><button class="btn" data-del="' + esc(r.key || r.name + '|' + r.updatedAt) + '">✕</button></td></tr>').join('') + '</table>';
-  } else html = '<div class="sub">暂无记录——通关并在结算页署名后即可上榜</div>';
-  elOverlay.innerHTML = '<div class="panel" style="max-width:720px"><h2>🏆 本地排行榜</h2>' + html +
-    '<div class="stat" style="margin-top:10px">当前档案（' + esc(SAVE.playerName || '未署名') + '）：各关最佳总质量 ' +
+  const camp = SAVE.leaderboard.slice().sort((a, b) => b.totalMassKg - a.totalMassKg).slice(0, 10)
+    .map(r => ({ name: esc(r.name), kg: fmtMass(r.totalMassKg),
+      extra: BODIES[r.bestTier || 0].name + ' · ' + (r.updatedAt || '').slice(5, 10), key: 'camp|' + r.name }));
+  const endl = SAVE.endlessBoard.slice(0, 10)
+    .map(r => ({ name: esc(r.name), kg: fmtMass(r.kg),
+      extra: BODIES[r.maxTier || 0].name + ' · ' + r.date, key: 'end|' + r.name }));
+  const daily = SAVE.dailyBoard.slice(0, 10)
+    .map(r => ({ name: esc(r.name), kg: fmtMass(r.kg), extra: r.date, key: 'day|' + r.name + '|' + r.date }));
+  elOverlay.innerHTML = '<div class="panel" style="max-width:760px"><h2>🏆 本地排行榜</h2>' +
+    '<div class="stat" style="margin:2px 0 4px;color:#ffd76a">战役总榜（各关最佳之和）</div>' + lbTable(camp) +
+    '<div class="stat" style="margin:12px 0 4px;color:#9fe8ff">♾ 无尽模式榜</div>' + lbTable(endl) +
+    '<div class="stat" style="margin:12px 0 4px;color:#c9a0ff">📅 每日挑战榜</div>' + lbTable(daily) +
+    '<div class="stat" style="margin-top:10px">当前档案（' + esc(SAVE.playerName || '未署名') + '）：战役总质量 ' +
     fmtMass(totalBest()) + '</div><div class="row">' + panelBack(false) + '</div></div>';
   elOverlay.classList.add('show');
 }
@@ -837,6 +926,9 @@ function showMenu() {
     '<button class="btn" data-act="board">🏆 排行榜</button>' +
     '<button class="btn" data-act="settings">⚙ 设置</button>' +
     '<button class="btn" data-act="retut">🎓 重看教程</button></div>' +
+    '<div class="row" style="margin-top:8px">' +
+    '<button class="btn gold" data-act="endless">♾ 无尽模式</button>' +
+    '<button class="btn gold" data-act="daily">📅 每日挑战</button></div>' +
     '<details><summary>玩法说明</summary><ul>' +
     '<li>点击下方<b>候选池</b>选择天体，点击<b>轨道空槽位</b>投放</li>' +
     '<li>同一轨道<b>相邻同级</b>天体自动合成并<b>向外轨迁移</b>；连锁合成有共振奖励</li>' +
@@ -868,15 +960,29 @@ function showWin() {
     '<div class="stat">' + scoreLine + eq + '<br>' +
     '投放 <b>' + S.drops + '/' + S.lvl.maxDrops + '</b>' + (S.drops <= S.lvl.maxDrops ? ' ✓' : ' ✗') +
     ' · 损失 <b>' + fmtMass(S.loss) + '</b>' + (S.loss <= S.lvl.maxLossKg ? ' ✓' : ' ✗') + '</div>' +
-    '<div class="stat" style="margin-top:8px">署名 <input id="winName" maxlength="12" value="' + esc(SAVE.playerName) + '">　成绩将记入本地排行榜</div>' +
+    '<div class="stat" style="margin-top:8px">署名 <input id="winName" maxlength="12" value="' + esc(SAVE.playerName) + '">　成绩将记入' +
+      (S.mode === 'daily' ? '每日榜' : '战役总榜') + '</div>' +
     '<div class="row">' +
     '<button class="btn big" data-act="poster">🖼 生成海报</button>' +
-    (S.lvlIdx + 1 < LEVELS.length ? '<button class="btn big gold" data-act="level" data-i="' + (S.lvlIdx + 1) + '">下一关</button>' : '') +
+    (S.mode === 'campaign' && S.lvlIdx + 1 < LEVELS.length ? '<button class="btn big gold" data-act="level" data-i="' + (S.lvlIdx + 1) + '">下一关</button>' : '') +
     '<button class="btn big" data-act="restart">再来一次</button>' +
     '<button class="btn big" data-act="menu">菜单</button></div></div>';
   elOverlay.classList.add('show');
 }
 function showCrash() {
+  if (S.mode === 'endless') {
+    const earths = S.score / ME;
+    elOverlay.innerHTML = '<div class="panel"><h2 style="color:#ff8a8a">♾ 引力崩溃 · 无尽终局</h2>' +
+      '<div class="stat">回收总质量 <b class="gold">' + fmtMass(S.score) + '</b>' +
+      (earths >= 0.01 ? '<br>你的宇宙重 <b>' + earths.toFixed(2) + '</b> 个地球' : '') + '<br>' +
+      '投放 ' + S.drops + ' · 最大连锁 ×' + S.maxCombo + ' · 最大天体 ' + BODIES[SAVE.stats.maxTier || 0].name + '</div>' +
+      '<div class="stat" style="margin-top:8px">署名 <input id="crashName" maxlength="12" value="' + esc(SAVE.playerName) + '">　将记入无尽榜</div>' +
+      '<div class="row"><button class="btn big gold" data-act="rec-endless">记入榜单</button>' +
+      '<button class="btn big" data-act="restart">再来一局</button>' +
+      '<button class="btn big" data-act="menu">菜单</button></div></div>';
+    elOverlay.classList.add('show');
+    return;
+  }
   elOverlay.innerHTML = '<div class="panel"><h2 style="color:#ff8a8a">引力崩溃</h2>' +
     '<div class="sub">轨道已满，且没有可交付或可弃置的出路</div>' +
     '<div class="stat" style="text-align:center">小提示：及时交付匹配的天体可以腾出槽位；<br>弃置与潮汐滑移是最后的腾挪手段</div>' +
@@ -967,18 +1073,34 @@ elOverlay.addEventListener('click', e => {
   }
   const del = e.target.closest('[data-del]');
   if (del) { const key = del.dataset.del;
-    SAVE.leaderboard = SAVE.leaderboard.filter(r => (r.key || r.name + '|' + r.updatedAt) !== key);
+    if (key.startsWith('camp|')) SAVE.leaderboard = SAVE.leaderboard.filter(r => r.name !== key.slice(5));
+    else if (key.startsWith('end|')) SAVE.endlessBoard = SAVE.endlessBoard.filter(r => r.name !== key.slice(4));
+    else if (key.startsWith('day|')) SAVE.dailyBoard = SAVE.dailyBoard.filter(r => r.name !== key.slice(4).split('|')[0]);
     persist(); showBoard(); return; }
   const t = e.target.closest('[data-act]'); if (!t) return;
   const act = t.dataset.act; sfx.click();
   const wn = document.getElementById('winName');
   if (wn) { const nmv = wn.value.trim();
-    if (validName(nmv)) updateLeaderboard(nmv);
+    if (validName(nmv)) {
+      if (S && S.mode === 'daily') { SAVE.playerName = nmv;
+        SAVE.dailyBoard.push({ name: nmv, kg: S.score, date: S.dateStr });
+        SAVE.dailyBoard.sort((a, b) => b.kg - a.kg); SAVE.dailyBoard = SAVE.dailyBoard.slice(0, 10); persist(); }
+      else updateLeaderboard(nmv);
+    }
     else if (nmv) toast('玩家名需为 1–12 位中文/字母/数字/下划线，未记入排行榜'); }
   if (act === 'resume') resumeGame();
-  else if (act === 'restart') startLevel(S ? S.lvlIdx : 0);
+  else if (act === 'restart') {
+    if (S && S.mode === 'endless') startEndless();
+    else if (S && S.mode === 'daily') startDaily();
+    else startLevel(S ? S.lvlIdx : 0); }
   else if (act === 'menu') showMenu();
   else if (act === 'retut') { SAVE.tut = {}; persist(); startLevel(0); }
+  else if (act === 'endless') startEndless();
+  else if (act === 'daily') startDaily();
+  else if (act === 'rec-endless') { const wn = document.getElementById('crashName');
+    if (wn) { const v = wn.value.trim(); if (validName(v)) { SAVE.playerName = v;
+      SAVE.endlessBoard.push({ name: v, kg: S.score, maxTier: SAVE.stats.maxTier || 0, date: cnDateStr() });
+      SAVE.endlessBoard.sort((a, b) => b.kg - a.kg); SAVE.endlessBoard = SAVE.endlessBoard.slice(0, 10); persist(); } } }
   else if (act === 'level') startLevel(+t.dataset.i);
   else if (act === 'back-pause') showPause();
   else if (act === 'dex' || act === 'dex-p') showDex(act === 'dex-p');
@@ -1124,7 +1246,7 @@ function drawBoard() {
     }
     // 可交互提示圈
     if (MODE === 'play') {
-      if (canDeliver(b.t)) {
+      if (S.mode !== 'endless' && canDeliver(b.t)) {
         const a = .45 + .3 * Math.sin(vt * 5);
         ctx.strokeStyle = 'rgba(255,215,106,' + a.toFixed(3) + ')'; ctx.lineWidth = 2.4;
         ctx.beginPath(); ctx.arc(x, y, bodyR(b.t) + 6, 0, 6.29); ctx.stroke();
@@ -1216,6 +1338,21 @@ function starPath(x, y, R) {
 }
 function drawConstellation() {
   const R = CONST_RECT;
+  if (S.mode === 'endless') {           // 无尽模式：以信息面板替代星座订单
+    ctx.fillStyle = 'rgba(10,16,38,.55)'; ctx.strokeStyle = 'rgba(120,150,255,.25)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(R.x - 28, R.y - 44, R.w + 56, R.h + 88, 14); ctx.fill(); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffd76a'; ctx.font = 'bold 30px "Microsoft YaHei", sans-serif';
+    ctx.fillText('♾ 无尽模式', R.x + R.w / 2, R.y + 26);
+    ctx.font = '15px "Microsoft YaHei", sans-serif'; ctx.fillStyle = '#aab6e8';
+    const free = S.board.flat().filter(c => !c).length;
+    ctx.fillText('总质量 ' + fmtMass(S.score), R.x + R.w / 2, R.y + 92);
+    ctx.fillText('投放 ' + S.drops + ' · 最大连锁 ×' + S.maxCombo, R.x + R.w / 2, R.y + 136);
+    ctx.fillText('最大天体 ' + C.BODIES[SAVE.stats.maxTier || 0].name, R.x + R.w / 2, R.y + 180);
+    ctx.fillStyle = free <= 6 ? '#ff8a8a' : '#9fe8ff';
+    ctx.fillText('剩余空槽 ' + free + ' / 28', R.x + R.w / 2, R.y + 224);
+    return;
+  }
   ctx.fillStyle = 'rgba(10,16,38,.55)'; ctx.strokeStyle = 'rgba(120,150,255,.25)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.roundRect(R.x - 28, R.y - 44, R.w + 56, R.h + 88, 14); ctx.fill(); ctx.stroke();
   ctx.font = 'bold 16px "Microsoft YaHei", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1304,13 +1441,15 @@ function drawTutorial() {
 }
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const p = S ? S.order.reduce((a, o) => a + o.delivered, 0) / S.order.reduce((a, o) => a + o.count, 0) : 0.15;
+  const p = !S ? 0.15 : (S.mode === 'endless'
+    ? S.board.flat().filter(c => !c).length / 28
+    : S.order.reduce((a, o) => a + o.delivered, 0) / Math.max(1, S.order.reduce((a, o) => a + o.count, 0)));
   drawBackground(S ? p : 0.12);
   ctx.save();
   if (S && S.shake > 0 && !SAVE.settings.reducedMotion) ctx.translate(rnd(-1, 1) * S.shake * 8, rnd(-1, 1) * S.shake * 8);
   drawSun();
   if (S) {
-    drawBoard(); drawEffects(); drawConstellation(); drawTutorial();
+    drawBoard(); drawEffects(); drawConstellation(); drawTutorial(); drawPerf();
     // 顶部关卡进度条（背景即进度条 v0.1：星云已随 p 增强）
     ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(560, 876, 480, 5);
     ctx.fillStyle = '#ffd76a'; ctx.fillRect(560, 876, 480 * p, 5);
@@ -1325,9 +1464,30 @@ function render() {
 }
 
 /* =============== 主循环 =============== */
+const perf = { on: false, dt: [] };
+document.addEventListener('keydown', e => {
+  if (e.key === 'F9') { e.preventDefault(); perf.on = !perf.on; perf.dt = []; }
+});
+function drawPerf() {
+  if (!perf.on || perf.dt.length < 30) return;
+  const fs = perf.dt.map(d => 1 / d).sort((a, b) => a - b);
+  const avg = fs.reduce((a, b) => a + b, 0) / fs.length;
+  const p95 = fs[Math.floor(fs.length * .95)];
+  const drops = fs.filter(f => f < 30).length;
+  ctx.fillStyle = 'rgba(8,12,28,.85)'; ctx.strokeStyle = 'rgba(130,150,255,.4)';
+  ctx.beginPath(); ctx.roundRect(16, 64, 280, 74, 8); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = avg >= 55 ? '#9fe8ff' : '#ff8a8a';
+  ctx.font = 'bold 15px "Microsoft YaHei", sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText('FPS 采样（F9 关闭）', 28, 72);
+  ctx.font = '13px "Microsoft YaHei", sans-serif'; ctx.fillStyle = '#dfe6ff';
+  ctx.fillText('平均 ' + avg.toFixed(1) + ' · P95 ' + p95.toFixed(1) + ' · 掉帧 ' + drops, 28, 96);
+  ctx.fillStyle = '#8896c8';
+  ctx.fillText('样本 ' + fs.length + ' 帧（NFR-P01 ≥55）', 28, 116);
+}
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (perf.on) { perf.dt.push(dt); if (perf.dt.length > 600) perf.dt.shift(); }
   vt += dt;
   if (S && (MODE === 'play')) update(dt);
   else if (S && (MODE === 'winning' || MODE === 'crashing')) { S.time += dt; updateFx(dt);

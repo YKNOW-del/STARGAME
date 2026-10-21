@@ -1,0 +1,3 @@
+{ "name": "starchef-tests", "private": true, "type": "module",
+  "description": "TC-01~12 引擎级真用例（对应需求文档 7.2 CI 映射，Node 直接运行）",
+  "scripts": { "test": "node run-all.js" } }
