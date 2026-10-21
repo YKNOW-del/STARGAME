@@ -1148,13 +1148,125 @@ function drawSun() {
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(CX, CY, 56 * pr, 0, 6.29); ctx.stroke();
 }
+/* =============== 程序化天体纹理引擎（离屏缓存 + 缓慢自转 + 光照层） =============== */
+const TEX_CACHE = new Map();
+const TEX_SPIN = { 6:.045, 7:.028, 8:.055, 9:.03, 10:.04, 11:.042, 12:.085, 4:.02, 5:.015, 3:.012 };
+const ATMO_RIM = { 8:'#7fc4ff', 7:'#ffe9a6', 9:'#a8f0ea', 10:'#7f9fff', 11:'#ffe9b0', 12:'#ffcf9a', 6:'#e8a284' };
+function heartPath(g, x, y, s) {
+  g.save(); g.translate(x, y); g.scale(s / 24, s / 24);
+  g.beginPath();
+  g.moveTo(0, 9);
+  g.bezierCurveTo(-15, -3, -9, -17, 0, -8);
+  g.bezierCurveTo(9, -17, 15, -3, 0, 9);
+  g.closePath(); g.restore();
+}
+function bodyTex(t) {
+  if (TEX_CACHE.has(t)) return TEX_CACHE.get(t);
+  const S2 = 128, R = S2 / 2 - 2;
+  const tex = document.createElement('canvas'); tex.width = tex.height = S2;
+  const g = tex.getContext('2d');
+  const rndT = mulberry32(20261021 + t * 977);
+  const rr = (a, b) => a + rndT() * (b - a);
+  g.beginPath(); g.arc(S2 / 2, S2 / 2, R, 0, 6.29); g.clip();
+  const blob = (x, y, r2, color, a, sq) => { g.globalAlpha = a; g.fillStyle = color;
+    g.beginPath(); const n2 = 7 + Math.floor(rndT() * 4);
+    for (let i = 0; i < n2; i++) { const ang = i / n2 * 6.283, rad = r2 * (.6 + rndT() * .5);
+      const px = x + Math.cos(ang) * rad, py = y + Math.sin(ang) * rad * (sq || .85);
+      i ? g.lineTo(px, py) : g.moveTo(px, py); }
+    g.closePath(); g.fill(); g.globalAlpha = 1; };
+  const band = (y0, h, color, a, wv) => { g.globalAlpha = a; g.fillStyle = color; g.beginPath();
+    g.moveTo(0, y0);
+    for (let x = 0; x <= S2; x += 8) g.lineTo(x, y0 + Math.sin(x / S2 * 6.283 + wv) * h * .3);
+    for (let x = S2; x >= 0; x -= 8) g.lineTo(x, y0 + h + Math.sin(x / S2 * 6.283 + wv * 1.7) * h * .3);
+    g.closePath(); g.fill(); g.globalAlpha = 1; };
+  const crater = (x, y, r2) => { g.globalAlpha = .38; g.fillStyle = 'rgba(30,22,16,.7)';
+    g.beginPath(); g.arc(x, y, r2, 0, 6.29); g.fill();
+    g.globalAlpha = .5; g.strokeStyle = 'rgba(255,235,210,.55)'; g.lineWidth = 1.1;
+    g.beginPath(); g.arc(x, y, r2, -2.4, .6); g.stroke(); g.globalAlpha = 1; };
+  const cap = (top) => { g.globalAlpha = .85; g.fillStyle = '#f4f8ff';
+    g.beginPath(); g.ellipse(S2 / 2, top ? 7 : S2 - 7, R * .62, 12, 0, 0, 6.29); g.fill();
+    g.globalAlpha = .3; g.beginPath();
+    g.ellipse(S2 / 2 + rr(-14, 14), top ? 16 : S2 - 16, R * .4, 7, 0, 0, 6.29); g.fill(); g.globalAlpha = 1; };
+  switch (t) {
+    case 0: for (let i = 0; i < 26; i++) { g.fillStyle = 'rgba(255,255,255,' + rr(.2, .7).toFixed(2) + ')';
+      g.beginPath(); g.arc(rr(16, 112), rr(16, 112), rr(.6, 1.8), 0, 6.29); g.fill(); } break;
+    case 1: blob(64, 60, 34, '#eafcff', .3); blob(48, 74, 18, '#bfe9f5', .35);
+      for (let i = 0; i < 6; i++) blob(rr(30, 98), rr(30, 98), rr(4, 9), '#ffffff', .22); break;
+    case 2: blob(64, 64, 46, '#8a715c', .5);
+      for (let i = 0; i < 9; i++) crater(rr(22, 106), rr(22, 106), rr(3, 9)); break;
+    case 3: heartPath(g, 66, 58, 30); g.globalAlpha = .55; g.fillStyle = '#eed9b4'; g.fill(); g.globalAlpha = 1;
+      blob(38, 88, 15, '#57422f', .42); blob(92, 84, 10, '#6b5137', .35); break;
+    case 4: blob(44, 50, 26, '#5a5f6b', .55); blob(84, 66, 20, '#636a77', .45);
+      blob(60, 92, 16, '#525966', .5);
+      for (let i = 0; i < 11; i++) crater(rr(20, 108), rr(20, 108), rr(1.5, 5)); break;
+    case 5: for (let i = 0; i < 15; i++) crater(rr(18, 110), rr(18, 110), rr(2, 7));
+      blob(70, 46, 18, '#7d6a55', .3); break;
+    case 6: cap(true); cap(false);
+      blob(52, 56, 24, '#7a2f14', .42, .6); blob(84, 76, 15, '#8f4a20', .3);
+      band(30, 12, '#c9581e', .2, 1.2); band(78, 14, '#a03e12', .18, 2.6); break;
+    case 7: for (let i = 0; i < 6; i++) band(rr(8, 110), rr(6, 16), i % 2 ? '#fff2c0' : '#d8b23a', rr(.18, .34), rr(0, 6));
+      blob(70, 60, 20, '#fff7d6', .18, 1.4); break;
+    case 8: for (let i = 0; i < 5; i++) blob(rr(26, 100), rr(30, 96), rr(11, 20), i % 2 ? '#3e7d3a' : '#8a7440', .5, .75);
+      cap(true); cap(false);
+      for (let i = 0; i < 4; i++) band(rr(20, 100), rr(5, 10), '#ffffff', rr(.14, .26), rr(0, 6)); break;
+    case 9: band(20, 30, '#dffdf8', .14, .8); band(62, 26, '#9fe8e2', .13, 2.2);
+      band(98, 22, '#c8f6f0', .12, 4); break;
+    case 10: blob(52, 58, 16, '#16265e', .5, .7);
+      band(34, 10, '#a8c4ff', .22, 1.5); band(74, 12, '#cfe0ff', .18, 3.3);
+      for (let i = 0; i < 3; i++) blob(rr(30, 98), rr(24, 100), rr(4, 8), '#eaf2ff', .3, 1.6); break;
+    case 11: for (let i = 0; i < 7; i++) band(rr(6, 112), rr(7, 15), i % 2 ? '#fff6d8' : '#d9ae52', rr(.14, .28), rr(0, 6)); break;
+    case 12: band(6, 16, '#e8d5b5', .5, .4); band(24, 13, '#b5651d', .5, 2.1); band(39, 16, '#f2e3c8', .5, .9);
+      band(57, 14, '#c97b2e', .5, 3.4); band(73, 17, '#efe0c0', .45, 1.7); band(92, 15, '#a8551a', .45, 2.8);
+      band(110, 14, '#e3cfae', .4, .6);
+      g.globalAlpha = .8; g.fillStyle = '#c9401a';
+      g.beginPath(); g.ellipse(80, 66, 13, 8, -.15, 0, 6.29); g.fill();
+      g.globalAlpha = .45; g.strokeStyle = '#ffcf9a'; g.lineWidth = 2;
+      g.beginPath(); g.ellipse(80, 66, 15, 9.5, -.15, 0, 6.29); g.stroke(); g.globalAlpha = 1;
+      for (let i = 0; i < 8; i++) blob(rr(15, 112), rr(12, 40), rr(3, 6), '#fff', .12, 1.5);
+      for (let i = 0; i < 6; i++) blob(rr(15, 112), rr(88, 114), rr(3, 6), '#8a4a1a', .14, 1.5); break;
+    case 13: for (let i = 0; i < 60; i++) { g.fillStyle = 'rgba(255,' + Math.floor(rr(210, 245)) + ',140,' + rr(.15, .5).toFixed(2) + ')';
+      g.beginPath(); g.arc(rr(14, 114), rr(14, 114), rr(1, 3.4), 0, 6.29); g.fill(); }
+      for (let i = 0; i < 5; i++) blob(rr(30, 98), rr(30, 98), rr(6, 13), '#e8a000', .2); break;
+    default: break;
+  }
+  /* 光照层：左上高光、右下暗侧、大气边缘（不随自转） */
+  const shade = document.createElement('canvas'); shade.width = shade.height = S2;
+  const sg = shade.getContext('2d');
+  sg.beginPath(); sg.arc(S2 / 2, S2 / 2, R, 0, 6.29); sg.clip();
+  const sh = sg.createRadialGradient(S2 * .32, S2 * .3, R * .18, S2 * .52, S2 * .56, R * 1.06);
+  sh.addColorStop(0, 'rgba(255,255,255,.12)');
+  sh.addColorStop(.55, 'rgba(0,0,0,0)');
+  sh.addColorStop(1, t === 13 ? 'rgba(120,40,0,.25)' : 'rgba(2,4,14,.6)');
+  sg.fillStyle = sh; sg.fillRect(0, 0, S2, S2);
+  if (ATMO_RIM[t]) { sg.globalAlpha = .55; sg.strokeStyle = ATMO_RIM[t]; sg.lineWidth = 3.5;
+    sg.shadowColor = ATMO_RIM[t]; sg.shadowBlur = 9;
+    sg.beginPath(); sg.arc(S2 / 2, S2 / 2, R - 2.5, 0, 6.29); sg.stroke(); }
+  const out = { tex, shade };
+  TEX_CACHE.set(t, out);
+  return out;
+}
 function drawBody(x, y, r, t, alpha, v) {
   ctx.save(); ctx.globalAlpha = alpha === undefined ? 1 : alpha;
   if (t === 13) { ctx.shadowColor = '#ffd54f'; ctx.shadowBlur = 24; }
+  if (t === 11) { // 土星环（后半，先画再被球体遮挡）
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-.42);
+    ctx.strokeStyle = 'rgba(230,214,170,.55)'; ctx.lineWidth = Math.max(2, r * .13);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.62, r * .52, 0, Math.PI + .18, 6.283 - .18); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,246,200,.4)'; ctx.lineWidth = Math.max(1.4, r * .07);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.78, r * .58, 0, Math.PI + .22, 6.283 - .22); ctx.stroke();
+    ctx.restore();
+  }
+  const T = bodyTex(t);
   const g = ctx.createRadialGradient(x - r * .35, y - r * .35, r * .12, x, y, r);
   g.addColorStop(0, BODIES[t].c1); g.addColorStop(1, BODIES[t].c2);
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
   ctx.shadowBlur = 0;
+  const spin = TEX_SPIN[t] ? vt * TEX_SPIN[t] : 0;
+  if (spin) { ctx.save(); ctx.translate(x, y); ctx.rotate(spin);
+    ctx.drawImage(T.tex, -r, -r, r * 2, r * 2); ctx.restore(); }
+  else ctx.drawImage(T.tex, x - r, y - r, r * 2, r * 2);
+  ctx.drawImage(T.shade, x - r, y - r, r * 2, r * 2);
+
   if (t === 1) { // 彗尾背离恒星
     const dx = x - CX, dy = y - CY, L = Math.hypot(dx, dy) || 1;
     const tg = ctx.createLinearGradient(x, y, x + dx / L * 34, y + dy / L * 34);
@@ -1162,15 +1274,25 @@ function drawBody(x, y, r, t, alpha, v) {
     ctx.strokeStyle = tg; ctx.lineWidth = 4; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx / L * 34, y + dy / L * 34); ctx.stroke();
   }
-  if (t === 11) { ctx.strokeStyle = 'rgba(255,246,200,.8)'; ctx.lineWidth = 3;
-    ctx.save(); ctx.translate(x, y); ctx.rotate(-.45);
-    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.55, r * .5, 0, 0, 6.29); ctx.stroke(); ctx.restore(); }
-  if (t === 12) { ctx.save(); ctx.beginPath(); ctx.arc(x, y, r * .96, 0, 6.29); ctx.clip();
-    ctx.strokeStyle = 'rgba(140,60,30,.45)'; ctx.lineWidth = r * .18;
-    [-.45, .15, .6].forEach(o => { ctx.beginPath();
-      ctx.moveTo(x - r, y + r * o); ctx.quadraticCurveTo(x, y + r * o + r * .12, x + r, y + r * o); ctx.stroke(); });
+  if (t === 1) { // 彗尾背离恒星
+    const dx = x - CX, dy = y - CY, L = Math.hypot(dx, dy) || 1;
+    const tg = ctx.createLinearGradient(x, y, x + dx / L * 34, y + dy / L * 34);
+    tg.addColorStop(0, 'rgba(160,230,255,.55)'); tg.addColorStop(1, 'rgba(160,230,255,0)');
+    ctx.strokeStyle = tg; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx / L * 34, y + dy / L * 34); ctx.stroke();
+  }
+  if (t === 11) { // 土星环（前半，含卡西尼缝）
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-.42);
+    ctx.strokeStyle = 'rgba(255,246,200,.8)'; ctx.lineWidth = Math.max(2, r * .13);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.62, r * .52, 0, .18, Math.PI - .18); ctx.stroke();
+    ctx.strokeStyle = 'rgba(200,170,120,.35)'; ctx.lineWidth = Math.max(1, r * .04);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.62, r * .52, 0, .2, Math.PI - .2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,248,214,.55)'; ctx.lineWidth = Math.max(1.4, r * .07);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.78, r * .58, 0, .22, Math.PI - .22); ctx.stroke();
     ctx.restore(); }
   if (t === 14) { ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,220,.9)'; ctx.lineWidth = Math.max(1.4, r * .05);
+    ctx.beginPath(); ctx.arc(x, y, r * 1.04, 0, 6.29); ctx.stroke();
     ctx.strokeStyle = 'rgba(200,150,255,.85)'; ctx.lineWidth = 3.2;
     ctx.beginPath(); ctx.ellipse(x, y, r * 1.4, r * .55, -.5, 0, 6.29); ctx.stroke();
     ctx.strokeStyle = 'rgba(255,180,90,.7)'; ctx.lineWidth = 2.4;
