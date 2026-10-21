@@ -40,6 +40,14 @@ export function makeEngine(storage) {
     },
     saveNow() { try { storage.persist(this.SAVE); } catch (e) {} },
 
+    burst(x, y, color, n) {
+      const S = this.S;
+      for (let i = 0; i < n; i++) {
+        const a = Math.random() * Math.PI * 2, v = 40 + Math.random() * 160;
+        S.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+          life: 0.4 + Math.random() * 0.5, at: S.time, color, r: 1.2 + Math.random() * 1.8 });
+      }
+    },
     /* ---------- 关卡 ---------- */
     startLevel(idx) {
       const lv = C.LEVELS[idx];
@@ -52,7 +60,7 @@ export function makeEngine(storage) {
         time: 0, driftAt: 6,
         nextMeteorAt: lv.meteor > 0 ? 14 : Infinity,
         warns: [], tool: null, slideSrc: null,
-        merges: [], rings: [], floats: [], flashAt: -9, _resoTmp: 0,
+        merges: [], rings: [], floats: [], dels: [], parts: [], flashAt: -9, _resoTmp: 0,
       };
       this.MODE = 'play';
       emit('level', idx);
@@ -77,12 +85,14 @@ export function makeEngine(storage) {
           const [px, py] = slotPos(m.to[0], m.to[1]);
           this.S.merges.push({ ax, ay, bx, by, px, py, at: this.S.time, t: m.tier });
           this.S.rings.push({ x: px, y: py, at: this.S.time, dur: .4, r1: 46, color: '#ffe9a8', lw: 3 });
+          this.burst(px, py, '#ffe9a8', 8);
           emit('merge', m);
           if (m.devoured && m.devoured.length) {
             let lm = 0;
             m.devoured.forEach(d => { lm += C.mass(d.t); });
             this.S.loss += lm;
             this.S.rings.push({ x: px, y: py, at: this.S.time, dur: .9, r1: 130, color: '#b08cff', lw: 5 });
+            this.burst(px, py, '#b08cff', 16);
             emit('blackhole', m.devoured.length);
           }
         }
@@ -120,6 +130,9 @@ export function makeEngine(storage) {
       o.delivered++;
       S.score += C.mass(b.t);
       this.SAVE.stats.totalDeliveredKg += C.mass(b.t);
+      const [x, y] = slotPos(k, i);
+      S.dels.push({ x0: x, y0: y, at: S.time, dur: .6 });
+      S.floats.push({ x, y, at: S.time, dur: 1.1, text: '+' + C.fmtMass(C.mass(b.t)), color: '#9fe8ff' });
       S.board[k][i] = null;
       emit('deliver', o);
       this.saveNow();
@@ -137,6 +150,7 @@ export function makeEngine(storage) {
       const [x, y] = slotPos(k, i);
       S.rings.push({ x, y, at: S.time, dur: .8, r1: 160, color: '#ffd76a', lw: 6 });
       S.flashAt = S.time;
+      this.burst(x, y, '#ffcf7a', 18);
       emit('supernova');
       this.afterAction();
     },
@@ -151,6 +165,7 @@ export function makeEngine(storage) {
       const [x, y] = slotPos(k, i);
       S.rings.push({ x, y, at: S.time, dur: .7, r1: LAYOUT.RADII[k] * .6, color: '#bfe3ff', lw: 5 });
       S.flashAt = S.time;
+      this.burst(x, y, '#bfe3ff', 16);
       emit('pulse', n);
       this.afterAction();
     },
@@ -227,6 +242,7 @@ export function makeEngine(storage) {
     /* ---------- 每帧（UI 层以 rAF 调用；返回 true 表示需要重绘） ---------- */
     tick(dt) {
       const S = this.S;
+      this._dt = dt;
       if (!S) return false;
       if (this.MODE === 'play') {
         S.time += dt;
@@ -260,6 +276,7 @@ export function makeEngine(storage) {
               else { S.loss += C.mass(b.t) - C.mass(b.t - 1); b.t--; b.born = S.time; this.unlockDex(b); }
               const [x, y] = slotPos(w.k, w.i);
               S.rings.push({ x, y, at: S.time, dur: .5, r1: 60, color: '#ff8a5a', lw: 4 });
+              this.burst(x, y, '#ff9f6a', 12);
               emit('meteor');
               if (this.resolveFx().length) S._resoTmp = 0;
             }
@@ -270,10 +287,16 @@ export function makeEngine(storage) {
         if (this.MODE === 'winning' && S.time >= S.wonAt) { this.MODE = 'won'; emit('won'); }
         if (this.MODE === 'crashing' && S.time >= S.crashAt) { this.MODE = 'crash'; emit('crash'); }
       } else return false;
+      // 粒子运动
+      const pdt = this._dt || 0.016;
+      S.parts = S.parts.filter(p => {
+        p.x += p.vx * pdt; p.y += p.vy * pdt; p.vx *= 0.99; p.vy *= 0.99;
+        return S.time - p.at <= p.life;
+      });
       // 清理过期特效
       const now = S.time;
-      ['merges', 'rings', 'floats'].forEach(key => {
-        const dur = { merges: .5, rings: .9, floats: 1.2 }[key];
+      ['merges', 'rings', 'floats', 'dels'].forEach(key => {
+        const dur = { merges: .5, rings: .9, floats: 1.2, dels: .65 }[key];
         S[key] = S[key].filter(e => now - e.at <= (e.dur || dur));
       });
       return true;
