@@ -120,6 +120,7 @@ const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const stage = document.getElementById('stage');
 const elTop = document.getElementById('topbar'), elBottom = document.getElementById('bottombar');
 const elLvl = document.getElementById('lvlname'), elStats = document.getElementById('stats');
+const hintEl = elStats; // 无独立提示条：模式提示写入统计栏
 const elPool = document.getElementById('pool'), elToast = document.getElementById('toast');
 const elOverlay = document.getElementById('overlay');
 const elCD = document.getElementById('cDiscard'), elCS = document.getElementById('cSlide');
@@ -152,9 +153,16 @@ function loadSave() {
       s.stats = Object.assign({ totalDeliveredKg: 0, maxTier: 0 }, s.stats || {});
       s.settings = Object.assign({ muted: false, colorblind: false, reducedMotion: false }, s.settings || {});
       s.tut = s.tut || {};
+      s.endlessBoard = Array.isArray(s.endlessBoard) ? s.endlessBoard : [];
+      s.dailyBoard = Array.isArray(s.dailyBoard) ? s.dailyBoard : [];
+      s.dynBoard = Array.isArray(s.dynBoard) ? s.dynBoard : [];
+      s.achievements = Array.isArray(s.achievements) ? s.achievements : [];
+      s.settings.bgm = s.settings.bgm === undefined ? .5 : s.settings.bgm;
+      s.settings.se = s.settings.se === undefined ? .8 : s.settings.se;
       return s;
     } } catch (e) {}
   return { unlocked: 1, stars: {}, best: {}, dex: [], playerName: '', leaderboard: [], tut: {},
+    endlessBoard: [], dailyBoard: [], dynBoard: [], achievements: [],
     stats: { totalDeliveredKg: 0, maxTier: 0 }, settings: { muted: false, colorblind: false, reducedMotion: false } };
 }
 let SAVE = loadSave();
@@ -182,7 +190,7 @@ function ensureAudio() {
 document.addEventListener('pointerdown', ensureAudio);
 function tone(f, dur, type, g, delay, slideTo) {
   if (!AC || SAVE.settings.muted) return;
-  g = (g || .14) * .9; delay = delay || 0;
+  g = (g || .14) * (SAVE.settings.se === undefined ? .9 : SAVE.settings.se); delay = delay || 0;
   const t = AC.currentTime + delay;
   const o = AC.createOscillator(), v = AC.createGain();
   o.type = type || 'sine'; o.frequency.setValueAtTime(f, t);
@@ -237,7 +245,7 @@ function startLevel(idx) {
   S = {
     lvlIdx: idx, lvl: C.LEVELS[idx],
     board: C.newBoard(),
-    pool: C.rollPool(C.LEVELS[idx]), sel: 0,
+    pool: [], sel: 0,
     order: C.LEVELS[idx].order.map(o => ({ tier: o.tier, count: o.count, delivered: 0 })),
     score: 0, reso: 0, loss: 0, drops: 0, discard: 2, slide: 2,
     time: 0, driftAt: 6, nextMeteorAt: C.LEVELS[idx].meteor > 0 ? 14 : Infinity,
@@ -247,11 +255,111 @@ function startLevel(idx) {
   };
   S.coach = (COACH[idx] && !SAVE.tut[idx + 1]) ? { steps: COACH[idx], idx: 0 } : null;
   if (S.coach) S.coach.steps[0]._at = performance.now();
+  S.pool = C.rollPool(S.lvl);
   MODE = 'play';
   elTop.style.display = 'flex'; elBottom.style.display = 'flex';
   elOverlay.classList.remove('show');
   elLvl.textContent = '第' + (idx + 1) + '关 · ' + S.lvl.name;
   updateHUD();
+}
+
+/* ---------- 无尽/每日/动态三模式（与桌面版同步） ---------- */
+const DYN_FRESH = 120;
+function baseState(mode, lvl) {
+  return {
+    mode, lvlIdx: 0, lvl,
+    board: C.newBoard(),
+    pool: [], sel: 0,
+    order: (lvl.order || []).map(o => ({ tier: o.tier, count: o.count, delivered: 0 })),
+    score: 0, reso: 0, loss: 0, drops: 0, discard: 2, slide: 2,
+    time: 0, driftAt: 6, nextMeteorAt: lvl.meteor > 0 ? 12 : Infinity,
+    warns: [], tool: null, slideSrc: null, maxCombo: 0,
+    parts: [], floats: [], merges: [], dels: [], rings: [], flashAt: -9,
+    shake: 0, _resoTmp: 0, rng: null, dateStr: '', coach: null,
+  };
+}
+function enterGame(st, hint) {
+  S = st;
+  S.pool = C.rollPool(S.lvl, S.rng);
+  MODE = 'play';
+  elTop.style.display = 'flex'; elBottom.style.display = 'flex';
+  elOverlay.classList.remove('show');
+  elLvl.textContent = S.lvl.name;
+  hintEl.textContent = hint;
+  updateHUD();
+}
+function startEndless() {
+  const lvl = { name: '♾ 无尽模式', pool: [0, 2], order: [],
+    maxDrops: Infinity, maxLossKg: Infinity, meteor: 30, variants: [] };
+  enterGame(baseState('endless', lvl),
+    '无尽：点击任意天体回收质量 · 全部槽满即崩溃 · 候选池递进');
+}
+function startDaily() {
+  const seed = dailySeed(), rng = mulberry32(seed);
+  const rr = (a, b) => a + Math.floor(rng() * (b - a + 1));
+  const t1 = 2 + Math.floor(rng() * 9), t2 = 2 + Math.floor(rng() * 9);
+  const order = [{ tier: t1, count: rr(1, 2) }, { tier: t2, count: rr(1, 2) }];
+  if (order[0].tier === order[1].tier) order[1].count += 1;
+  const minT = Math.max(0, Math.min(t1, t2) - 1), maxT = Math.max(t1, t2);
+  const dmin = C.dMin({ pool: [minT, maxT], order });
+  const lvl = { name: '📅 每日挑战', pool: [minT, maxT], order,
+    maxDrops: Math.ceil(1.6 * dmin) + 2, maxLossKg: 0.25 * order.reduce((a, o) => a + C.mass(o.tier) * o.count, 0),
+    meteor: 20 + (seed % 11), variants: [] };
+  const st = baseState('daily', lvl);
+  st.rng = rng; st.dateStr = cnDateStr();
+  enterGame(st, '每日挑战：今日同题（日期种子）· 成绩计入每日榜');
+}
+function dynNewOrder() {
+  const w = [0, 0, 1, 2, 3, 4, 4, 4, 3, 3, 2, 1, 1];
+  let tot = 0; w.forEach(v => tot += v);
+  let r2 = Math.random() * tot, tier = 2;
+  for (let i = 0; i < w.length; i++) { r2 -= w[i]; if (r2 <= 0) { tier = 2 + i; break; } }
+  const now = S ? S.time : 0;
+  return { tier, count: 1 + (Math.random() < .4 ? 1 : 0),
+    delivered: 0, bornAt: now, expireAt: now + DYN_FRESH };
+}
+function startDynamic() {
+  const lvl = { name: '🍽 动态订单', pool: [0, 2], order: [],
+    maxDrops: Infinity, maxLossKg: Infinity, meteor: 26, variants: [] };
+  const st = baseState('dynamic', lvl);
+  st.order = [dynNewOrder(), dynNewOrder(), dynNewOrder()];
+  st.order.forEach(o => { o.bornAt = 0; o.expireAt = DYN_FRESH; });
+  enterGame(st, '动态订单：3 单滚动 · 120s 保鲜 · 过期/完成即换单');
+}
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function cnDateStr() { const d = new Date(Date.now() + 8 * 3600e3);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' + String(d.getUTCDate()).padStart(2, '0'); }
+function dailySeed() { return parseInt(cnDateStr().replace(/-/g, ''), 10); }
+/* 成就系统（FR-1203，与桌面版同清单） */
+const ACH = [
+  { id:'first_deliver', name:'初次交付', desc:'完成第一次订单交付' },
+  { id:'first_planet',  name:'首颗行星', desc:'首次在场上出现行星级天体（水星及以上）' },
+  { id:'combo4',        name:'连锁大师', desc:'单次投放引发 ≥4 连锁' },
+  { id:'sun',           name:'点燃恒星', desc:'首次出现太阳' },
+  { id:'blackhole',     name:'黑洞诞生', desc:'首次合成/出现黑洞' },
+  { id:'supernova',     name:'恒星葬礼', desc:'引爆一次超新星' },
+  { id:'pulse',         name:'星际灯塔', desc:'引爆一次脉冲星' },
+  { id:'three_star',    name:'完美主义', desc:'任意关卡获得三星' },
+  { id:'chapter1',      name:'星际启航', desc:'通关第一章（第 3 关）' },
+  { id:'campaign_all',  name:'银河征服', desc:'通关全部战役关卡' },
+  { id:'daily',         name:'每日一题', desc:'完成一次每日挑战' },
+  { id:'endless_earth', name:'小宇宙',   desc:'无尽模式单局回收 ≥1 个地球质量' },
+  { id:'dex_all',       name:'全知全能', desc:'图鉴收集 17/17' },
+];
+function ach(id) {
+  if (SAVE.achievements.includes(id)) return;
+  const e = ACH.find(a => a.id === id); if (!e) return;
+  SAVE.achievements.push(id); persist();
+  toast('🎖 成就解锁：' + e.name);
+  if (S) S.floats.push({ x: CX, y: CY - 70, at: S.time, dur: 1.6, text: '🎖 ' + e.name, color: '#ffd76a', size: 15 });
 }
 function dexIdOf(b) { return C.dexIdOf(b); }
 function unlockDex(b) {
@@ -262,6 +370,10 @@ function unlockDex(b) {
   persist();
   const e = C.DEX.find(d => d.id === id);
   toast('📖 图鉴解锁：' + (e && e.name ? e.name : C.BODIES[b.t].name) + ' · ' + C.fmtMass(C.mass(b.t)));
+  if (b.t >= 5) ach('first_planet');
+  if (b.t === 13) ach('sun');
+  if (b.t === 14) ach('blackhole');
+  if (SAVE.dex.length >= C.DEX.length) ach('dex_all');
 }
 
 /* ---------- 动作（核心规则走 C.*） ---------- */
@@ -361,20 +473,29 @@ function detonatePulse(k, i) {
   afterAction();
 }
 function checkEnd() {
-  if (C.orderDone(S.order)) {
+  if (!['endless', 'dynamic'].includes(S.mode) && S.order.length > 0 && C.orderDone(S.order)) {
     MODE = 'winning'; S.wonAt = S.time + 1.1;
     sfx.win();
     for (let n = 0; n < 90; n++) S.parts.push({ x: rnd(80, 820), y: rnd(-80, 0),
       vx: rnd(-30, 30), vy: rnd(60, 180), life: rnd(1.5, 2.6), t0: S.time,
       color: ['#ffd76a', '#9fe8ff', '#c9a0ff', '#ff9f9f'][n % 4], r: rnd(2, 4) });
-    const stars = C.starCount(S.drops, S.loss, S.lvl);
-    SAVE.stars[S.lvlIdx] = Math.max(SAVE.stars[S.lvlIdx] || 0, stars);
-    SAVE.best[S.lvlIdx] = Math.max(SAVE.best[S.lvlIdx] || 0, S.score);
-    SAVE.unlocked = Math.max(SAVE.unlocked, Math.min(C.LEVELS.length, S.lvlIdx + 2));
+    if (S.mode === 'campaign') {
+      const stars = C.starCount(S.drops, S.loss, S.lvl);
+      SAVE.stars[S.lvlIdx] = Math.max(SAVE.stars[S.lvlIdx] || 0, stars);
+      SAVE.best[S.lvlIdx] = Math.max(SAVE.best[S.lvlIdx] || 0, S.score);
+      SAVE.unlocked = Math.max(SAVE.unlocked, Math.min(C.LEVELS.length, S.lvlIdx + 2));
+      if (stars >= 3) ach('three_star');
+      if (S.lvlIdx === 2) ach('chapter1');
+      if (S.lvlIdx === C.LEVELS.length - 1) ach('campaign_all');
+    }
+    if (S.mode === 'daily') ach('daily');
     persist();
     return;
   }
-  if (C.crashCondition(S.board, S.order, S.discard)) {
+  const crash = S.mode === 'endless'
+    ? S.board.every(orb => orb.every(Boolean))
+    : C.crashCondition(S.board, S.order, S.discard);
+  if (crash) {
     MODE = 'crashing'; S.crashAt = S.time + 1;
     S.shake = .9; sfx.crash();
   }
@@ -540,10 +661,19 @@ function update(dt) {
     const occ = [];
     for (let k = 0; k < 4; k++) for (let i = 0; i < C.ORBITS[k]; i++) if (S.board[k][i]) occ.push([k, i]);
     if (occ.length) {
-      const [k, i] = occ[Math.floor(Math.random() * occ.length)];
+      const [k, i] = occ[Math.floor((S.rng ? S.rng() : Math.random()) * occ.length)];
       S.warns.push({ k, i, start: S.time, impact: S.time + 3 });
       sfx.warn();
       coachEvent('warn-shown');
+    }
+  }
+  if (S.mode === 'dynamic') {
+    for (let n = 0; n < S.order.length; n++) {
+      if (S.time >= S.order[n].expireAt) {
+        toast('订单过期 ⌛ 已换单');
+        S.order[n] = dynNewOrder();
+        S.order[n].bornAt = S.time; S.order[n].expireAt = S.time + DYN_FRESH;
+      }
     }
   }
   for (let n = S.warns.length - 1; n >= 0; n--) {
@@ -581,8 +711,10 @@ function updateFx(dt) {
 
 /* ---------- HUD ---------- */
 function updateHUD() {
-  elStats.innerHTML = '质量 <b>' + C.fmtMass(S.score) + '</b> · 投 <b>' + S.drops + '/' + S.lvl.maxDrops +
-    '</b> · 损失 <b>' + C.fmtMass(S.loss) + '</b>';
+  elStats.innerHTML = '质量 <b>' + C.fmtMass(S.score) + '</b> · 投 <b>' + S.drops +
+    (isFinite(S.lvl.maxDrops) ? '/' + S.lvl.maxDrops : '') +
+    '</b> · 损失 <b>' + C.fmtMass(S.loss) + '</b>' +
+    ((S.mode === 'endless' || S.mode === 'dynamic') ? ' · 空槽 <b>' + S.board.flat().filter(c => !c).length + '</b>' : '');
   elCD.textContent = S.discard; elCS.textContent = S.slide;
   tDiscard.disabled = S.discard <= 0; tSlide.disabled = S.slide <= 0;
   let html = '';
@@ -682,11 +814,15 @@ function showMenu() {
       '<div class="st">' + (lock ? '🔒 未解锁' : starStr(st)) + '</div></div>';
   }
   elOverlay.innerHTML = '<div class="panel"><h1>星轨厨房</h1>' +
-    '<div class="sub">移动版 v0.1（竖屏触屏 · 复用平台无关核心模块）</div>' +
+    '<div class="sub">移动版 v0.2（竖屏触屏 · 四模式 + 成就 + 纹理引擎）</div>' +
     '<div class="levels">' + lv + '</div>' +
-    '<div class="row"><button class="btn" data-act="dex">📖 图鉴 ' + SAVE.dex.length + '/' + C.DEX.length + '</button>' +
+    '<div class="row"><button class="btn" data-act="dex">📖 图鉴 ' + SAVE.dex.length + '/' + C.DEX.length + ' · 🎖 ' + SAVE.achievements.length + '/' + ACH.length + '</button>' +
     '<button class="btn" data-act="board">🏆 排行榜</button>' +
     '<button class="btn" data-act="settings">⚙ 设置</button></div>' +
+    '<div class="row" style="margin-top:8px">' +
+    '<button class="btn gold" data-act="endless">♾ 无尽</button>' +
+    '<button class="btn gold" data-act="daily">📅 每日</button>' +
+    '<button class="btn gold" data-act="dynamic">🍽 动态订单</button></div>' +
     '<div class="foot">提示：点候选 → 点空槽投放 → 相邻同级自动合成 → 点金圈天体交付点亮星座</div></div>';
   elOverlay.classList.add('show');
 }
@@ -719,6 +855,20 @@ function showWin() {
   elOverlay.classList.add('show');
 }
 function showCrash() {
+  if (S.mode === 'endless' || S.mode === 'dynamic') {
+    const earths = S.score / C.ME;
+    const title = S.mode === 'dynamic' ? '🍽 引力崩溃 · 动态订单终局' : '♾ 引力崩溃 · 无尽终局';
+    elOverlay.innerHTML = '<div class="panel"><h2 style="color:#ff8a8a">' + title + '</h2>' +
+      '<div class="stat">回收总质量 <b class="gold">' + C.fmtMass(S.score) + '</b>' +
+      (earths >= .01 ? '<br>你的宇宙重 <b>' + earths.toFixed(2) + '</b> 个地球' : '') + '<br>' +
+      '投放 ' + S.drops + ' · 最大连锁 ×' + S.maxCombo + ' · 最大天体 ' + C.BODIES[SAVE.stats.maxTier || 0].name + '</div>' +
+      '<div class="stat" style="margin-top:6px">署名 <input id="crashName" maxlength="12" value="' + esc(SAVE.playerName) + '"></div>' +
+      '<div class="row"><button class="btn big gold" data-act="rec">记入榜单</button>' +
+      '<button class="btn big" data-act="restart">再来一局</button>' +
+      '<button class="btn big" data-act="menu">菜单</button></div></div>';
+    elOverlay.classList.add('show');
+    return;
+  }
   elOverlay.innerHTML = '<div class="panel"><h2 style="color:#ff8a8a">引力崩溃</h2>' +
     '<div class="sub">轨道已满，且没有可交付或可弃置的出路</div>' +
     '<div class="row"><button class="btn big gold" data-act="restart">重新开始（无惩罚）</button>' +
@@ -739,16 +889,24 @@ function showDex(fromPause) {
     '<div class="row"><button class="btn big" data-act="' + (fromPause ? 'back-pause' : 'menu') + '">' + (fromPause ? '返回暂停' : '返回菜单') + '</button></div></div>';
   elOverlay.classList.add('show');
 }
+function lbTable(rows, keyPrefix) {
+  if (!rows.length) return '<div class="sub" style="margin:4px 0 8px">暂无记录</div>';
+  return '<table class="lb"><tr><th>#</th><th>玩家</th><th>质量</th><th>备注</th><th></th></tr>' +
+    rows.map((r, ix) => '<tr><td>' + (ix + 1) + '</td><td>' + esc(r.name) + '</td><td>' + C.fmtMass(r.kg) +
+      '</td><td>' + (C.BODIES[r.maxTier || 0].name + '·' + r.date) + '</td>' +
+      '<td><button class="btn" data-del="' + keyPrefix + '|' + esc(r.name) + '">✕</button></td></tr>').join('') + '</table>';
+}
 function showBoard() {
-  const rows = SAVE.leaderboard.slice().sort((a, b) => b.totalMassKg - a.totalMassKg).slice(0, 10);
-  const html = rows.length
-    ? '<table class="lb"><tr><th>#</th><th>玩家</th><th>总质量</th><th>最大</th><th></th></tr>' +
-      rows.map((r, ix) => '<tr><td>' + (ix + 1) + '</td><td>' + esc(r.name) + '</td><td>' + C.fmtMass(r.totalMassKg) +
-        '</td><td>' + C.BODIES[r.bestTier || 0].name + '</td>' +
-        '<td><button class="btn" data-del="' + esc(r.key || r.name + '|' + r.updatedAt) + '">✕</button></td></tr>').join('') + '</table>'
-    : '<div class="sub">暂无记录——通关并署名后上榜</div>';
-  elOverlay.innerHTML = '<div class="panel"><h2>🏆 本地排行榜</h2>' + html +
-    '<div class="stat" style="margin-top:8px">当前档案（' + esc(SAVE.playerName || '未署名') + '）：' + C.fmtMass(totalBest()) + '</div>' +
+  const camp = SAVE.leaderboard.slice().sort((a, b) => b.totalMassKg - a.totalMassKg).slice(0, 5)
+    .map(r => ({ name: r.name, kg: r.totalMassKg, maxTier: r.bestTier || 0, date: (r.updatedAt || '').slice(5, 10) }));
+  elOverlay.innerHTML = '<div class="panel"><h2>🏆 排行榜</h2>' +
+    '<div class="stat" style="color:#ffd76a">战役总榜</div>' + lbTable(camp, 'camp') +
+    '<div class="stat" style="margin-top:8px;color:#9fe8ff">♾ 无尽榜</div>' +
+    lbTable(SAVE.endlessBoard.slice(0, 5), 'end') +
+    '<div class="stat" style="margin-top:8px;color:#c9a0ff">📅 每日榜</div>' +
+    lbTable(SAVE.dailyBoard.slice(0, 5), 'day') +
+    '<div class="stat" style="margin-top:8px;color:#ffc78a">🍽 动态订单榜</div>' +
+    lbTable(SAVE.dynBoard.slice(0, 5), 'dyn') +
     '<div class="row"><button class="btn big" data-act="menu">返回菜单</button></div></div>';
   elOverlay.classList.add('show');
 }
@@ -757,6 +915,8 @@ function showSettings(fromPause) {
   elOverlay.innerHTML = '<div class="panel"><h2>⚙ 设置</h2>' +
     '<div class="stat" style="text-align:left;line-height:2.6">' +
     '玩家名 <input id="setName" maxlength="12" value="' + esc(SAVE.playerName) + '"><br>' +
+    '音乐 <input id="setBgm" type="range" min="0" max="100" value="' + Math.round(st.bgm * 100) + '"> ' +
+    '音效 <input id="setSe" type="range" min="0" max="100" value="' + Math.round(st.se * 100) + '"><br>' +
     '<button class="btn" id="setMute">' + (st.muted ? '🔇 已静音' : '🔊 声音开启') + '</button> ' +
     '<button class="btn" id="setCb">' + (st.colorblind ? '✓ ' : '') + '色弱模式</button> ' +
     '<button class="btn" id="setRm">' + (st.reducedMotion ? '✓ ' : '') + '减动效</button></div>' +
@@ -769,6 +929,10 @@ function showSettings(fromPause) {
     if (C.validName(v)) { SAVE.playerName = v; persist(); toast('玩家名已保存'); }
     else { nm.value = SAVE.playerName; toast('玩家名需为 1–12 位中文/字母/数字/下划线'); }
   });
+  document.getElementById('setBgm').addEventListener('input', e => {
+    SAVE.settings.bgm = e.target.value / 100; persist(); updateBgm(); });
+  document.getElementById('setSe').addEventListener('input', e => {
+    SAVE.settings.se = e.target.value / 100; persist(); });
   document.getElementById('setMute').addEventListener('click', e => {
     SAVE.settings.muted = !SAVE.settings.muted; persist(); updateMuteIcon(); updateBgm();
     e.target.textContent = SAVE.settings.muted ? '🔇 已静音' : '🔊 声音开启';
@@ -794,7 +958,11 @@ elOverlay.addEventListener('click', e => {
   }
   const del = e.target.closest('[data-del]');
   if (del) { const key = del.dataset.del;
-    SAVE.leaderboard = SAVE.leaderboard.filter(r => (r.key || r.name + '|' + r.updatedAt) !== key);
+    const [pre, nm] = [key.split('|')[0], key.split('|').slice(1).join('|')];
+    if (pre === 'camp') SAVE.leaderboard = SAVE.leaderboard.filter(r => r.name !== nm);
+    else if (pre === 'end') SAVE.endlessBoard = SAVE.endlessBoard.filter(r => r.name !== nm);
+    else if (pre === 'day') SAVE.dailyBoard = SAVE.dailyBoard.filter(r => r.name !== nm);
+    else if (pre === 'dyn') SAVE.dynBoard = SAVE.dynBoard.filter(r => r.name !== nm);
     persist(); showBoard(); return; }
   const t = e.target.closest('[data-act]'); if (!t) return;
   const act = t.dataset.act; sfx.click();
@@ -803,7 +971,22 @@ elOverlay.addEventListener('click', e => {
     if (C.validName(v)) updateLeaderboard(v);
     else if (v) toast('玩家名非法，未记入排行榜'); }
   if (act === 'resume') { MODE = 'play'; elOverlay.classList.remove('show'); }
-  else if (act === 'restart') startLevel(S ? S.lvlIdx : 0);
+  else if (act === 'endless') startEndless();
+  else if (act === 'daily') startDaily();
+  else if (act === 'dynamic') startDynamic();
+  else if (act === 'rec') { const wn = document.getElementById('crashName');
+    if (wn) { const v = wn.value.trim(); if (C.validName(v)) { SAVE.playerName = v;
+      const arr = S && S.mode === 'dynamic' ? SAVE.dynBoard
+        : S && S.mode === 'daily' ? SAVE.dailyBoard : SAVE.endlessBoard;
+      arr.push({ name: v, kg: S.score, maxTier: SAVE.stats.maxTier || 0, date: cnDateStr() });
+      arr.sort((a, b) => b.kg - a.kg); arr.length = Math.min(arr.length, 10);
+      persist(); toast('已记入榜单'); } } }
+  else if (act === 'restart') {
+    if (S && S.mode === 'endless') startEndless();
+    else if (S && S.mode === 'dynamic') startDynamic();
+    else if (S && S.mode === 'daily') startDaily();
+    else startLevel(S ? S.lvlIdx : 0);
+  }
   else if (act === 'menu') showMenu();
   else if (act === 'level') startLevel(+t.dataset.i);
   else if (act === 'back-pause') showPause();
@@ -856,13 +1039,121 @@ function drawSun() {
   ctx.strokeStyle = 'rgba(255,215,106,.25)';
   ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(CX, CY, 56 * pr, 0, 6.29); ctx.stroke();
 }
+/* ---------- 程序化天体纹理引擎（与桌面版同步） ---------- */
+const TEX_CACHE = new Map();
+const TEX_SPIN = { 6:.045, 7:.028, 8:.055, 9:.03, 10:.04, 11:.042, 12:.085, 4:.02, 5:.015, 3:.012 };
+const ATMO_RIM = { 8:'#7fc4ff', 7:'#ffe9a6', 9:'#a8f0ea', 10:'#7f9fff', 11:'#ffe9b0', 12:'#ffcf9a', 6:'#e8a284' };
+function heartPath(g, x, y, sz) {
+  g.save(); g.translate(x, y); g.scale(sz / 24, sz / 24);
+  g.beginPath();
+  g.moveTo(0, 9);
+  g.bezierCurveTo(-15, -3, -9, -17, 0, -8);
+  g.bezierCurveTo(9, -17, 15, -3, 0, 9);
+  g.closePath(); g.restore();
+}
+function bodyTex(t) {
+  if (TEX_CACHE.has(t)) return TEX_CACHE.get(t);
+  const S2 = 128, R = S2 / 2 - 2;
+  const tex = document.createElement('canvas'); tex.width = tex.height = S2;
+  const g = tex.getContext('2d');
+  const rndT = mulberry32(20261021 + t * 977);
+  const rr = (a, b) => a + rndT() * (b - a);
+  g.beginPath(); g.arc(S2 / 2, S2 / 2, R, 0, 6.29); g.clip();
+  const blob = (x, y, r2, color, a, sq) => { g.globalAlpha = a; g.fillStyle = color;
+    g.beginPath(); const n2 = 7 + Math.floor(rndT() * 4);
+    for (let i = 0; i < n2; i++) { const ang = i / n2 * 6.283, rad = r2 * (.6 + rndT() * .5);
+      const px = x + Math.cos(ang) * rad, py = y + Math.sin(ang) * rad * (sq || .85);
+      i ? g.lineTo(px, py) : g.moveTo(px, py); }
+    g.closePath(); g.fill(); g.globalAlpha = 1; };
+  const band = (y0, h, color, a, wv) => { g.globalAlpha = a; g.fillStyle = color; g.beginPath();
+    g.moveTo(0, y0);
+    for (let x = 0; x <= S2; x += 8) g.lineTo(x, y0 + Math.sin(x / S2 * 6.283 + wv) * h * .3);
+    for (let x = S2; x >= 0; x -= 8) g.lineTo(x, y0 + h + Math.sin(x / S2 * 6.283 + wv * 1.7) * h * .3);
+    g.closePath(); g.fill(); g.globalAlpha = 1; };
+  const crater = (x, y, r2) => { g.globalAlpha = .38; g.fillStyle = 'rgba(30,22,16,.7)';
+    g.beginPath(); g.arc(x, y, r2, 0, 6.29); g.fill();
+    g.globalAlpha = .5; g.strokeStyle = 'rgba(255,235,210,.55)'; g.lineWidth = 1.1;
+    g.beginPath(); g.arc(x, y, r2, -2.4, .6); g.stroke(); g.globalAlpha = 1; };
+  const cap = (top) => { g.globalAlpha = .85; g.fillStyle = '#f4f8ff';
+    g.beginPath(); g.ellipse(S2 / 2, top ? 7 : S2 - 7, R * .62, 12, 0, 0, 6.29); g.fill();
+    g.globalAlpha = .3; g.beginPath();
+    g.ellipse(S2 / 2 + rr(-14, 14), top ? 16 : S2 - 16, R * .4, 7, 0, 0, 6.29); g.fill(); g.globalAlpha = 1; };
+  switch (t) {
+    case 0: for (let i = 0; i < 26; i++) { g.fillStyle = 'rgba(255,255,255,' + rr(.2, .7).toFixed(2) + ')';
+      g.beginPath(); g.arc(rr(16, 112), rr(16, 112), rr(.6, 1.8), 0, 6.29); g.fill(); } break;
+    case 1: blob(64, 60, 34, '#eafcff', .3); blob(48, 74, 18, '#bfe9f5', .35);
+      for (let i = 0; i < 6; i++) blob(rr(30, 98), rr(30, 98), rr(4, 9), '#ffffff', .22); break;
+    case 2: blob(64, 64, 46, '#8a715c', .5);
+      for (let i = 0; i < 9; i++) crater(rr(22, 106), rr(22, 106), rr(3, 9)); break;
+    case 3: heartPath(g, 66, 58, 30); g.globalAlpha = .55; g.fillStyle = '#eed9b4'; g.fill(); g.globalAlpha = 1;
+      blob(38, 88, 15, '#57422f', .42); blob(92, 84, 10, '#6b5137', .35); break;
+    case 4: blob(44, 50, 26, '#5a5f6b', .55); blob(84, 66, 20, '#636a77', .45);
+      blob(60, 92, 16, '#525966', .5);
+      for (let i = 0; i < 11; i++) crater(rr(20, 108), rr(20, 108), rr(1.5, 5)); break;
+    case 5: for (let i = 0; i < 15; i++) crater(rr(18, 110), rr(18, 110), rr(2, 7));
+      blob(70, 46, 18, '#7d6a55', .3); break;
+    case 6: cap(true); cap(false);
+      blob(52, 56, 24, '#7a2f14', .42, .6); blob(84, 76, 15, '#8f4a20', .3);
+      band(30, 12, '#c9581e', .2, 1.2); band(78, 14, '#a03e12', .18, 2.6); break;
+    case 7: for (let i = 0; i < 6; i++) band(rr(8, 110), rr(6, 16), i % 2 ? '#fff2c0' : '#d8b23a', rr(.18, .34), rr(0, 6));
+      blob(70, 60, 20, '#fff7d6', .18, 1.4); break;
+    case 8: for (let i = 0; i < 5; i++) blob(rr(26, 100), rr(30, 96), rr(11, 20), i % 2 ? '#3e7d3a' : '#8a7440', .5, .75);
+      cap(true); cap(false);
+      for (let i = 0; i < 4; i++) band(rr(20, 100), rr(5, 10), '#ffffff', rr(.14, .26), rr(0, 6)); break;
+    case 9: band(20, 30, '#dffdf8', .14, .8); band(62, 26, '#9fe8e2', .13, 2.2);
+      band(98, 22, '#c8f6f0', .12, 4); break;
+    case 10: blob(52, 58, 16, '#16265e', .5, .7);
+      band(34, 10, '#a8c4ff', .22, 1.5); band(74, 12, '#cfe0ff', .18, 3.3);
+      for (let i = 0; i < 3; i++) blob(rr(30, 98), rr(24, 100), rr(4, 8), '#eaf2ff', .3, 1.6); break;
+    case 11: for (let i = 0; i < 7; i++) band(rr(6, 112), rr(7, 15), i % 2 ? '#fff6d8' : '#d9ae52', rr(.14, .28), rr(0, 6)); break;
+    case 12: band(6, 16, '#e8d5b5', .5, .4); band(24, 13, '#b5651d', .5, 2.1); band(39, 16, '#f2e3c8', .5, .9);
+      band(57, 14, '#c97b2e', .5, 3.4); band(73, 17, '#efe0c0', .45, 1.7); band(92, 15, '#a8551a', .45, 2.8);
+      band(110, 14, '#e3cfae', .4, .6);
+      g.globalAlpha = .8; g.fillStyle = '#c9401a';
+      g.beginPath(); g.ellipse(80, 66, 13, 8, -.15, 0, 6.29); g.fill();
+      g.globalAlpha = .45; g.strokeStyle = '#ffcf9a'; g.lineWidth = 2;
+      g.beginPath(); g.ellipse(80, 66, 15, 9.5, -.15, 0, 6.29); g.stroke(); g.globalAlpha = 1;
+      for (let i = 0; i < 8; i++) blob(rr(15, 112), rr(12, 40), rr(3, 6), '#fff', .12, 1.5);
+      for (let i = 0; i < 6; i++) blob(rr(15, 112), rr(88, 114), rr(3, 6), '#8a4a1a', .14, 1.5); break;
+    case 13: for (let i = 0; i < 60; i++) { g.fillStyle = 'rgba(255,' + Math.floor(rr(210, 245)) + ',140,' + rr(.15, .5).toFixed(2) + ')';
+      g.beginPath(); g.arc(rr(14, 114), rr(14, 114), rr(1, 3.4), 0, 6.29); g.fill(); }
+      for (let i = 0; i < 5; i++) blob(rr(30, 98), rr(30, 98), rr(6, 13), '#e8a000', .2); break;
+    default: break;
+  }
+  const shade = document.createElement('canvas'); shade.width = shade.height = S2;
+  const sg = shade.getContext('2d');
+  sg.beginPath(); sg.arc(S2 / 2, S2 / 2, R, 0, 6.29); sg.clip();
+  const sh = sg.createRadialGradient(S2 * .32, S2 * .3, R * .18, S2 * .52, S2 * .56, R * 1.06);
+  sh.addColorStop(0, 'rgba(255,255,255,.12)');
+  sh.addColorStop(.55, 'rgba(0,0,0,0)');
+  sh.addColorStop(1, t === 13 ? 'rgba(120,40,0,.25)' : 'rgba(2,4,14,.6)');
+  sg.fillStyle = sh; sg.fillRect(0, 0, S2, S2);
+  if (ATMO_RIM[t]) { sg.globalAlpha = .55; sg.strokeStyle = ATMO_RIM[t]; sg.lineWidth = 3.5;
+    sg.shadowColor = ATMO_RIM[t]; sg.shadowBlur = 9;
+    sg.beginPath(); sg.arc(S2 / 2, S2 / 2, R - 2.5, 0, 6.29); sg.stroke(); }
+  const out = { tex, shade };
+  TEX_CACHE.set(t, out);
+  return out;
+}
 function drawBody(x, y, r, t, alpha, v) {
   ctx.save(); ctx.globalAlpha = alpha === undefined ? 1 : alpha;
   if (t === 13) { ctx.shadowColor = '#ffd54f'; ctx.shadowBlur = 24; }
+  if (t === 11) {   // 土星环后半
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-.42);
+    ctx.strokeStyle = 'rgba(230,214,170,.55)'; ctx.lineWidth = Math.max(2, r * .13);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.62, r * .52, 0, Math.PI + .18, 6.283 - .18); ctx.stroke();
+    ctx.restore();
+  }
+  const T = bodyTex(t);
   const g = ctx.createRadialGradient(x - r * .35, y - r * .35, r * .12, x, y, r);
   g.addColorStop(0, C.BODIES[t].c1); g.addColorStop(1, C.BODIES[t].c2);
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
   ctx.shadowBlur = 0;
+  const spin = TEX_SPIN[t] ? vt * TEX_SPIN[t] : 0;
+  if (spin) { ctx.save(); ctx.translate(x, y); ctx.rotate(spin);
+    ctx.drawImage(T.tex, -r, -r, r * 2, r * 2); ctx.restore(); }
+  else ctx.drawImage(T.tex, x - r, y - r, r * 2, r * 2);
+  ctx.drawImage(T.shade, x - r, y - r, r * 2, r * 2);
   if (t === 1) {
     const dx = x - CX, dy = y - CY, L = Math.hypot(dx, dy) || 1;
     const tg = ctx.createLinearGradient(x, y, x + dx / L * 32, y + dy / L * 32);
@@ -870,15 +1161,16 @@ function drawBody(x, y, r, t, alpha, v) {
     ctx.strokeStyle = tg; ctx.lineWidth = 4; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx / L * 32, y + dy / L * 32); ctx.stroke();
   }
-  if (t === 11) { ctx.strokeStyle = 'rgba(255,246,200,.8)'; ctx.lineWidth = 3;
-    ctx.save(); ctx.translate(x, y); ctx.rotate(-.45);
-    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.55, r * .5, 0, 0, 6.29); ctx.stroke(); ctx.restore(); }
-  if (t === 12) { ctx.save(); ctx.beginPath(); ctx.arc(x, y, r * .96, 0, 6.29); ctx.clip();
-    ctx.strokeStyle = 'rgba(140,60,30,.45)'; ctx.lineWidth = r * .18;
-    [-.45, .15, .6].forEach(o => { ctx.beginPath();
-      ctx.moveTo(x - r, y + r * o); ctx.quadraticCurveTo(x, y + r * o + r * .12, x + r, y + r * o); ctx.stroke(); });
+  if (t === 11) {   // 土星环前半 + 卡西尼缝
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-.42);
+    ctx.strokeStyle = 'rgba(255,246,200,.8)'; ctx.lineWidth = Math.max(2, r * .13);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.62, r * .52, 0, .18, Math.PI - .18); ctx.stroke();
+    ctx.strokeStyle = 'rgba(200,170,120,.35)'; ctx.lineWidth = Math.max(1, r * .04);
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.62, r * .52, 0, .2, Math.PI - .2); ctx.stroke();
     ctx.restore(); }
   if (t === 14) { ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,240,220,.9)'; ctx.lineWidth = Math.max(1.4, r * .05);
+    ctx.beginPath(); ctx.arc(x, y, r * 1.04, 0, 6.29); ctx.stroke();
     ctx.strokeStyle = 'rgba(200,150,255,.85)'; ctx.lineWidth = 3.2;
     ctx.beginPath(); ctx.ellipse(x, y, r * 1.4, r * .55, -.5, 0, 6.29); ctx.stroke(); }
   if (v === 'ice') { ctx.strokeStyle = 'rgba(210,242,255,.9)'; ctx.lineWidth = 2;
@@ -994,7 +1286,37 @@ function starPath(x, y, R) {
   ctx.closePath();
 }
 function drawConstellation() {
-  const R = CONST, n = S.order.length;
+  const R = CONST;
+  if (S.mode === 'endless' || S.mode === 'dynamic') {
+    ctx.fillStyle = 'rgba(10,16,38,.5)'; ctx.strokeStyle = 'rgba(120,150,255,.22)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(R.x - 16, R.y - 40, R.w + 32, R.h + 78, 12); ctx.fill(); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = S.mode === 'dynamic' ? '#ffc78a' : '#ffd76a';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillText(S.mode === 'dynamic' ? '🍽 动态订单' : '♾ 无尽模式', R.x + R.w / 2, R.y - 18);
+    if (S.mode === 'dynamic') {
+      S.order.forEach((o, i) => {
+        const [x, y] = starPos(i, 3);
+        const left = Math.max(0, (o.expireAt - S.time) / DYN_FRESH);
+        starPath(x, y, 13);
+        ctx.fillStyle = 'rgba(120,135,190,.4)'; ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(x - 30, y + 20, 60, 4);
+        ctx.fillStyle = left > .3 ? '#9fe8ff' : '#ff8a5a';
+        ctx.fillRect(x - 30, y + 20, 60 * left, 4);
+        ctx.font = '11px sans-serif'; ctx.fillStyle = '#aab6e8';
+        ctx.fillText(C.BODIES[o.tier].name + ' ' + o.delivered + '/' + o.count + ' · ' + Math.ceil(o.expireAt - S.time) + 's', x, y + 38);
+      });
+    } else {
+      ctx.font = '14px sans-serif'; ctx.fillStyle = '#aab6e8';
+      const free = S.board.flat().filter(c => !c).length;
+      ctx.fillText('总质量 ' + C.fmtMass(S.score), R.x + R.w / 2, R.y + 30);
+      ctx.fillText('投放 ' + S.drops + ' · 连锁 ×' + S.maxCombo, R.x + R.w / 2, R.y + 64);
+      ctx.fillStyle = free <= 6 ? '#ff8a8a' : '#9fe8ff';
+      ctx.fillText('剩余空槽 ' + free + '/28', R.x + R.w / 2, R.y + 98);
+    }
+    return;
+  }
+  const n = S.order.length;
   ctx.fillStyle = 'rgba(10,16,38,.5)'; ctx.strokeStyle = 'rgba(120,150,255,.22)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.roundRect(R.x - 16, R.y - 40, R.w + 32, R.h + 78, 12); ctx.fill(); ctx.stroke();
   ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1020,7 +1342,9 @@ function drawConstellation() {
 }
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const p = S ? S.order.reduce((a, o) => a + o.delivered, 0) / S.order.reduce((a, o) => a + o.count, 0) : .12;
+  const p = !S ? .12 : ((S.mode === 'endless' || S.mode === 'dynamic')
+    ? S.board.flat().filter(c => !c).length / 28
+    : S.order.reduce((a, o) => a + o.delivered, 0) / Math.max(1, S.order.reduce((a, o) => a + o.count, 0)));
   drawBackground(S ? p : .12);
   ctx.save();
   if (S && S.shake > 0 && !SAVE.settings.reducedMotion)

@@ -284,7 +284,10 @@ function tone(f, dur, type, g, delay, slideTo) {
 const sfx = {
   click:   () => tone(880, .05, 'sine', .05),
   place:   () => tone(320, .09, 'triangle', .12),
-  merge:   (tier, ci) => { const f = 740 * Math.pow(.92, tier) * Math.pow(1.05, ci || 0);
+  merge:   (tier, ci) => {                       // 五声音阶：连锁沿音阶爬升，等级越低音越沉
+             const PENT = [0, 2, 4, 7, 9];
+             const step = PENT[(ci || 0) % 5] + Math.floor((ci || 0) / 5) * 12 - Math.floor(tier * 1.2);
+             const f = 523.25 * Math.pow(2, step / 12);
              tone(f, .18, 'triangle', .17); tone(f * 1.5, .12, 'sine', .07, .02); },
   deliver: () => { tone(523, .12, 'sine', .14); tone(659, .14, 'sine', .14, .09); tone(784, .2, 'sine', .11, .18); },
   warn:    () => { tone(660, .09, 'square', .06); tone(660, .09, 'square', .06, 1.0); tone(660, .12, 'square', .07, 2.0); },
@@ -384,7 +387,7 @@ const ACH = [
   { id:'supernova',     name:'恒星葬礼', desc:'引爆一次超新星' },
   { id:'pulse',         name:'星际灯塔', desc:'引爆一次脉冲星' },
   { id:'three_star',    name:'完美主义', desc:'任意关卡获得三星' },
-  { id:'chapter1',      name:'星际启航', desc:'通关第一章（第 4 关）' },
+  { id:'chapter1',      name:'星际启航', desc:'通关第一章（第 3 关）' },
   { id:'campaign_all',  name:'银河征服', desc:'通关全部战役关卡' },
   { id:'daily',         name:'每日一题', desc:'完成一次每日挑战' },
   { id:'endless_earth', name:'小宇宙',   desc:'无尽模式单局回收 ≥1 个地球质量' },
@@ -648,7 +651,7 @@ function checkEnd() {
       SAVE.best[S.lvlIdx] = Math.max(SAVE.best[S.lvlIdx] || 0, S.score);
       SAVE.unlocked = Math.max(SAVE.unlocked, Math.min(LEVELS.length, S.lvlIdx + 2));
       if (stars >= 3) ach('three_star');
-      if (S.lvlIdx === 3) ach('chapter1');
+      if (S.lvlIdx === 2) ach('chapter1');
       if (S.lvlIdx === LEVELS.length - 1) ach('campaign_all');
     }
     if (S.mode === 'daily') ach('daily');
@@ -961,7 +964,10 @@ function showSettings(fromPause) {
     '音效音量 <input id="setSe" type="range" min="0" max="100" value="' + Math.round(st.se * 100) + '"> <span id="vSe">' + Math.round(st.se * 100) + '%</span><br>' +
     '<button class="btn" id="setMute">' + (st.muted ? '🔇 已静音' : '🔊 声音开启') + '</button>　' +
     '<button class="btn" id="setCb">' + (st.colorblind ? '✓ ' : '') + '色弱模式</button>　' +
-    '<button class="btn" id="setRm">' + (st.reducedMotion ? '✓ ' : '') + '减动效</button>' +
+    '<button class="btn" id="setRm">' + (st.reducedMotion ? '✓ ' : '') + '减动效</button><br>' +
+    '<button class="btn" id="setExport">📤 导出存档</button> ' +
+    '<button class="btn" id="setImport">📥 导入存档</button>' +
+    '<input id="impFile" type="file" accept="application/json" style="display:none">' +
     '</div><div class="row">' + panelBack(fromPause) + '</div></div>';
   elOverlay.classList.add('show');
   const nm = document.getElementById('setName');
@@ -985,6 +991,29 @@ function showSettings(fromPause) {
   document.getElementById('setRm').addEventListener('click', e => {
     SAVE.settings.reducedMotion = !SAVE.settings.reducedMotion; persist();
     e.target.textContent = (SAVE.settings.reducedMotion ? '✓ ' : '') + '减动效';
+  });
+  document.getElementById('setExport').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(SAVE, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '星轨厨房存档_' + cnDateStr() + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('存档已导出');
+  });
+  const fi = document.getElementById('impFile');
+  document.getElementById('setImport').addEventListener('click', () => fi.click());
+  fi.addEventListener('change', () => {
+    const f = fi.files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const d2 = JSON.parse(rd.result);
+        if (!d2 || typeof d2.unlocked !== 'number') throw new Error('bad');
+        localStorage.setItem(SAVE_KEY, rd.result);
+        toast('导入成功，即将刷新'); setTimeout(() => location.reload(), 700);
+      } catch (e) { toast('导入失败：文件不是有效的星轨厨房存档'); }
+    };
+    rd.readAsText(f);
   });
 }
 function showMenu() {
@@ -1055,12 +1084,14 @@ function showWin() {
 function showCrash() {
   if (S.mode === 'endless' || S.mode === 'dynamic') {
     const earths = S.score / ME;
-    elOverlay.innerHTML = '<div class="panel"><h2 style="color:#ff8a8a">♾ 引力崩溃 · 无尽终局</h2>' +
+    const endTitle = S.mode === 'dynamic' ? '🍽 引力崩溃 · 动态订单终局' : '♾ 引力崩溃 · 无尽终局';
+    elOverlay.innerHTML = '<div class="panel"><h2 style="color:#ff8a8a">' + endTitle + '</h2>' +
       '<div class="stat">回收总质量 <b class="gold">' + fmtMass(S.score) + '</b>' +
       (earths >= 0.01 ? '<br>你的宇宙重 <b>' + earths.toFixed(2) + '</b> 个地球' : '') + '<br>' +
       '投放 ' + S.drops + ' · 最大连锁 ×' + S.maxCombo + ' · 最大天体 ' + BODIES[SAVE.stats.maxTier || 0].name + '</div>' +
       '<div class="stat" style="margin-top:8px">署名 <input id="crashName" maxlength="12" value="' + esc(SAVE.playerName) + '">　将记入无尽榜</div>' +
       '<div class="row"><button class="btn big gold" data-act="rec-endless">记入榜单</button>' +
+      '<button class="btn big" data-act="poster">🖼 生成海报</button>' +
       '<button class="btn big" data-act="restart">再来一局</button>' +
       '<button class="btn big" data-act="menu">菜单</button></div></div>';
     elOverlay.classList.add('show');
@@ -1104,8 +1135,16 @@ function makePoster() {
     g.fillText('星 轨 厨 房', 540, 190);
     g.font = '28px "Microsoft YaHei"'; g.fillStyle = '#aab6e8';
     g.fillText('轨道合成 × 订单交付 · 战绩海报', 540, 248);
-    const pts = S.order.map((o, i) => { const p = CONST_PTS[i % 4];
+    let pts = S.order.map((o, i) => { const p = CONST_PTS[i % 4];
       return [200 + p[0] * 680, 380 + p[1] * 300, o]; });
+    if (!pts.length) {                                  // 无尽/动态终局：中心大星
+      g.strokeStyle = 'rgba(160,180,255,.0)'; g.beginPath();
+      starPath2(g, 540, 470, 70);
+      g.save(); g.shadowColor = '#ffd76a'; g.shadowBlur = 30;
+      g.fillStyle = '#ffd76a'; g.fill(); g.restore();
+      g.fillStyle = '#dfe6ff'; g.font = '26px "Microsoft YaHei"';
+      g.fillText(S.mode === 'dynamic' ? '🍽 动态订单终局' : '♾ 无尽终局', 540, 580);
+    }
     g.strokeStyle = 'rgba(160,180,255,.5)'; g.lineWidth = 3; g.beginPath();
     pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke();
     pts.forEach(([x, y, o]) => {
@@ -1118,8 +1157,9 @@ function makePoster() {
       g.fillStyle = '#dfe6ff'; g.font = '26px "Microsoft YaHei"';
       g.fillText(BODIES[o.tier].name + ' ' + o.delivered + '/' + o.count, x, y + 70);
     });
-    g.fillStyle = '#ffe9a8'; g.font = 'bold 46px "Microsoft YaHei"';
-    g.fillText('★'.repeat(starCount()) + '☆'.repeat(3 - starCount()), 540, 840);
+    g.fillStyle = '#ffe9a8'; g.font = 'bold 46px "Microsoft YaHei", "Microsoft YaHei", sans-serif';
+    g.fillText(['endless', 'dynamic'].includes(S.mode) ? '∞' :
+      '★'.repeat(starCount()) + '☆'.repeat(3 - starCount()), 540, 840);
     g.fillStyle = '#fff'; g.font = '40px "Microsoft YaHei"';
     g.fillText('总质量 ' + fmtMass(S.score), 540, 918);
     const earths = S.score / ME;
@@ -1151,7 +1191,7 @@ elOverlay.addEventListener('click', e => {
     const el = document.getElementById('dexdetail');
     if (el) el.innerHTML = un
       ? '<b>' + (en.name || BODIES[en.t].name) + '</b>（等级 ' + en.t + ' · ' + fmtMass(mass(en.t)) + '）<br>' + esc(en.fact)
-      : '？？？——尚未观测到该天体，首次出现在场上即自动解锁';
+      : '？？？——尚未观测到该天体（等级 ' + en.t + '），首次出现在场上即自动解锁';
     return;
   }
   const del = e.target.closest('[data-del]');
@@ -1206,20 +1246,30 @@ const bgStars = [];
 for (let i = 0; i < 240; i++) bgStars.push({ x: Math.random()*1600, y: Math.random()*900,
   r: rnd(.5, 1.8), tw: rnd(.5, 2.5), ph: rnd(0, 6.28), layer: Math.random() < .5 ? 0 : 1 });
 
-function drawBackground(p) {
-  const g = ctx.createLinearGradient(0, 0, 0, 900);
-  g.addColorStop(0, '#070b1c'); g.addColorStop(.6, '#05070f'); g.addColorStop(1, '#03040a');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, 1600, 900);
-  // 星云（随进度增强）
-  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+/* 背景离屏缓存：渐变+星云按进度分 20 档预渲染，帧内仅贴图+星点闪烁（性能优化） */
+const BG_CACHE = { key: -1, cv: null };
+function bgLayer(p) {
+  const key = Math.round(p * 20);
+  if (BG_CACHE.key === key && BG_CACHE.cv) return BG_CACHE.cv;
+  const c2 = document.createElement('canvas'); c2.width = 1600; c2.height = 900;
+  const g = c2.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 900);
+  gr.addColorStop(0, '#070b1c'); gr.addColorStop(.6, '#05070f'); gr.addColorStop(1, '#03040a');
+  g.fillStyle = gr; g.fillRect(0, 0, 1600, 900);
+  g.globalCompositeOperation = 'lighter';
   const neb = [ [400,220,'90,60,180'], [1250,700,'40,120,170'], [800,500,'150,80,140'] ];
-  neb.forEach(([x, y, c], i) => {
-    const a = (0.05 + 0.16 * p) * (1 + 0.3 * Math.sin(vt * .3 + i * 2));
-    const rg = ctx.createRadialGradient(x, y, 0, x, y, 320);
+  neb.forEach(([x, y, c]) => {
+    const a = 0.05 + 0.16 * (key / 20);
+    const rg = g.createRadialGradient(x, y, 0, x, y, 320);
     rg.addColorStop(0, 'rgba(' + c + ',' + a.toFixed(3) + ')'); rg.addColorStop(1, 'rgba(' + c + ',0)');
-    ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x, y, 320, 0, 6.29); ctx.fill();
+    g.fillStyle = rg; g.beginPath(); g.arc(x, y, 320, 0, 6.29); g.fill();
   });
-  ctx.restore();
+  BG_CACHE.key = key; BG_CACHE.cv = c2;
+  return c2;
+}
+
+function drawBackground(p) {
+  ctx.drawImage(bgLayer(p), 0, 0);
   // 星星
   bgStars.forEach(s => {
     const base = s.layer === 0 ? .35 : .6;
