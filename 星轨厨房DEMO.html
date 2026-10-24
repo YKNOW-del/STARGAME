@@ -276,25 +276,31 @@ function tone(f, dur, type, g, delay, slideTo) {
   o.type = type; o.frequency.setValueAtTime(f, t);
   if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t + dur);
   v.gain.setValueAtTime(0.0001, t);
-  v.gain.linearRampToValueAtTime(g, t + 0.012);
+  v.gain.linearRampToValueAtTime(g, t + 0.025);           // 更柔的起音，消除咔哒
   v.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(v); v.connect(AC.destination);
+  /* 音色柔化链：低通滤波（截止=基频×4，去方波/锯齿毛刺）→ 指数压限 */
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.value = Math.min(9000, f * 4); lp.Q.value = 0.5;
+  const comp = AC.createDynamicsCompressor();
+  comp.threshold.value = -18; comp.ratio.value = 6; comp.attack.value = .004; comp.release.value = .18;
+  o.connect(v); v.connect(lp); lp.connect(comp); comp.connect(AC.destination);
   o.start(t); o.stop(t + dur + 0.06);
 }
 const sfx = {
-  click:   () => tone(880, .05, 'sine', .05),
-  place:   () => tone(320, .09, 'triangle', .12),
+  click:   () => tone(660, .06, 'sine', .045),
+  place:   () => { tone(240, .1, 'triangle', .1); tone(480, .05, 'sine', .035, .01); },
   merge:   (tier, ci) => {                       // 五声音阶：连锁沿音阶爬升，等级越低音越沉
              const PENT = [0, 2, 4, 7, 9];
-             const step = PENT[(ci || 0) % 5] + Math.floor((ci || 0) / 5) * 12 - Math.floor(tier * 1.2);
-             const f = 523.25 * Math.pow(2, step / 12);
-             tone(f, .18, 'triangle', .17); tone(f * 1.5, .12, 'sine', .07, .02); },
-  deliver: () => { tone(523, .12, 'sine', .14); tone(659, .14, 'sine', .14, .09); tone(784, .2, 'sine', .11, .18); },
-  warn:    () => { tone(660, .09, 'square', .06); tone(660, .09, 'square', .06, 1.0); tone(660, .12, 'square', .07, 2.0); },
-  boom:    () => { tone(110, .6, 'sawtooth', .2, 0, 40); tone(50, .9, 'sine', .28); },
-  crash:   () => { tone(170, .8, 'sawtooth', .2, 0, 45); tone(60, 1.1, 'sine', .3, .05, 28); },
-  win:     () => { [523,659,784,1047].forEach((f,i)=>tone(f, .3, 'sine', .13, i*.13)); },
-  swallow: () => tone(140, .5, 'sine', .2, 0, 60),
+             const step = PENT[(ci || 0) % 5] + Math.floor((ci || 0) / 5) * 12 - Math.floor(tier * 1.5);
+             const f = 392 * Math.pow(2, step / 12);          // 基音下移纯四度（G4）
+             tone(f, .22, 'triangle', .13);
+             tone(f * 2, .14, 'sine', .045, .015); },         // 泛音弱化，不叠 1.5 倍非谐泛音
+  deliver: () => { tone(523, .14, 'sine', .12); tone(659, .16, 'sine', .12, .1); tone(784, .22, 'sine', .09, .2); },
+  warn:    () => { tone(587, .1, 'triangle', .055); tone(587, .1, 'triangle', .055, 1.0); tone(587, .14, 'triangle', .06, 2.0); },
+  boom:    () => { tone(130, .55, 'triangle', .16, 0, 48); tone(58, .9, 'sine', .24); },
+  crash:   () => { tone(150, .8, 'triangle', .16, 0, 42); tone(55, 1.1, 'sine', .26, .05, 30); },
+  win:     () => { [392, 523, 659, 784].forEach((f, i) => tone(f, .34, 'sine', .12, i * .14)); },
+  swallow: () => tone(150, .5, 'sine', .18, 0, 70),
 };
 document.addEventListener('pointerdown', ensureAudio, { once:false });
 /* 环境音乐（FR-1102 BGM）：Web Audio 合成的低音铺底，音量受设置控制 */
