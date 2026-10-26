@@ -301,6 +301,8 @@ const sfx = {
   crash:   () => { tone(150, .8, 'triangle', .16, 0, 42); tone(55, 1.1, 'sine', .26, .05, 30); },
   win:     () => { [392, 523, 659, 784].forEach((f, i) => tone(f, .34, 'sine', .12, i * .14)); },
   swallow: () => tone(150, .5, 'sine', .18, 0, 70),
+  slide:   () => { tone(400, .1, 'sine', .09); tone(600, .12, 'sine', .07, .06); },
+  discard: () => tone(200, .15, 'triangle', .1, 0, 80),
 };
 document.addEventListener('pointerdown', ensureAudio, { once:false });
 /* 环境音乐（FR-1102 BGM）：Web Audio 合成的低音铺底，音量受设置控制 */
@@ -454,6 +456,7 @@ function startLevel(idx) {
   elTop.style.display = 'flex'; elBottom.style.display = 'flex';
   elOverlay.classList.remove('show');
   elLvl.textContent = '第' + (idx + 1) + '关 · ' + S.lvl.name;
+  showTransition(['第一章 · 类地行星','第二章 · 外太阳系','第三章 · 恒星演化'][Math.min(2, Math.floor(idx / 3))], '第' + (idx + 1) + '关 · ' + S.lvl.name);
   elHint.textContent = S.lvl.hint;
   updateHUD();
   S.tut = (TUT[idx + 1] && !SAVE.tut[idx + 1]) ? { steps: TUT[idx + 1], idx: -1, mark: null } : null;
@@ -481,6 +484,7 @@ function enterGame(st, hint) {
   elTop.style.display = 'flex'; elBottom.style.display = 'flex';
   elOverlay.classList.remove('show');
   elLvl.textContent = S.lvl.name;
+  showTransition(S.lvl.name, hint.slice(0, 30));
   elHint.textContent = hint;
   refreshTutSkip(); updateHUD();
 }
@@ -565,7 +569,12 @@ function afterAction() {
   } else if (r.cnt < 2) S._resoTmp = 0;
   if (r.cnt > S.maxCombo) S.maxCombo = r.cnt;
   if (r.cnt >= 4) ach('combo4');
-  if (r.cnt >= 2) S.comboFlash = { n: r.cnt, at: S.time };
+  if (r.cnt >= 2) {
+    S.comboFlash = { n: r.cnt, at: S.time };
+    var shk = r.cnt >= 6 ? .8 : r.cnt >= 4 ? .5 : .25;
+    S.shake = Math.max(S.shake, shk);
+    if (r.cnt >= 4) S.hitStop = S.time + .1;   // hit-stop：短暂冻结游戏时间
+  }
   updateHUD();
   checkEnd();
 }
@@ -764,7 +773,9 @@ function updateFx(dt) {
 
 /* =============== HUD =============== */
 function updateHUD() {
-  elStats.innerHTML = '质量 <b>' + fmtMass(S.score) + '</b> · 投放 <b>' + S.drops +
+  var disp = S.score * (S._scoreAnim = S._scoreAnim === undefined ? S.score : S._scoreAnim + (S.score - S._scoreAnim) * .15);
+  if (Math.abs(S.score - S._scoreAnim) < S.score * .001) S._scoreAnim = S.score;
+  elStats.innerHTML = '质量 <b>' + fmtMass(S._scoreAnim || 0) + '</b> · 投放 <b>' + S.drops +
     (isFinite(S.lvl.maxDrops) ? '/' + S.lvl.maxDrops : '') +
     '</b> · 损失 <b>' + fmtMass(S.loss) + '</b>' +
     ((S.mode === 'endless' || S.mode === 'dynamic') ? ' · 空槽 <b>' + S.board.flat().filter(c => !c).length + '</b>' : '');
@@ -822,7 +833,7 @@ cv.addEventListener('pointerdown', e => {
     S.loss += mass(b.t); S.board[k][i] = null; S.discard--; S.tool = null;
     const [sx, sy] = slotPos(k, i); burst(sx, sy, '#ff8a8a', 12);
     toast('已弃置 ' + BODIES[b.t].name + '（质量计入损失）');
-    tone(200, .18, 'sawtooth', .1, 0, 80);
+    tone(200, .18, 'triangle', .1, 0, 80); sfx.discard();
     updateHUD(); return;
   }
   if (S.tool === 'slide') {
@@ -837,7 +848,7 @@ cv.addEventListener('pointerdown', e => {
         S.slide--; S.tool = null; S.slideSrc = null;
         const [sx, sy] = slotPos(k, i);
         S.rings.push({ x:sx, y:sy, at:S.time, dur:.4, r1: 44, color:'#9fe8ff', lw:3 });
-        tone(520, .12, 'sine', .1);
+        tone(520, .12, 'sine', .1); sfx.slide();
         afterAction();
         tutEvent('slide-used'); return;
       } else { toast('路径被阻挡，无法滑移'); return; }
@@ -1809,7 +1820,7 @@ function render() {
   if (S && S.shake > 0 && !SAVE.settings.reducedMotion) ctx.translate(rnd(-1, 1) * S.shake * 8, rnd(-1, 1) * S.shake * 8);
   drawSun();
   if (S) {
-    drawBoard(); drawEffects(); drawConstellation(); drawComboFlash(); drawTutorial(); drawVignette(); drawPerf();
+    drawBoard(); drawEffects(); drawConstellation(); drawComboFlash(); drawTransition(); drawTutorial(); drawVignette(); drawPerf();
     // 顶部关卡进度条（背景即进度条 v0.1：星云已随 p 增强）
     ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(560, 876, 480, 5);
     ctx.fillStyle = '#ffd76a'; ctx.fillRect(560, 876, 480 * p, 5);
@@ -1844,10 +1855,43 @@ function drawPerf() {
   ctx.fillStyle = '#8896c8';
   ctx.fillText('样本 ' + fs.length + ' 帧（NFR-P01 ≥55）', 28, 116);
 }
+var transCard = null;
+function showTransition(title, sub) {
+  transCard = { title: title, sub: sub, at: S ? S.time : 0, dur: 1.5 };
+}
+function drawTransition() {
+  if (!transCard) return;
+  var t = (S ? S.time : 0) - transCard.at;
+  if (t < 0 || t > transCard.dur) { transCard = null; return; }
+  var fadeIn = Math.min(1, t / .3);
+  var fadeOut = t > transCard.dur - .4 ? Math.max(0, (transCard.dur - t) / .4) : 1;
+  var alpha = fadeIn * fadeOut;
+  ctx.fillStyle = 'rgba(3,5,12,' + (alpha * .82).toFixed(2) + ')';
+  ctx.fillRect(0, 0, 1600, 900);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffd76a';
+  ctx.font = 'bold 46px "Microsoft YaHei", sans-serif';
+  ctx.shadowColor = 'rgba(255,215,106,.4)'; ctx.shadowBlur = 22;
+  ctx.fillText(transCard.title, 800, 400);
+  if (transCard.sub) {
+    ctx.font = '22px "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = '#aab6e8'; ctx.shadowBlur = 0;
+    ctx.fillText(transCard.sub, 800, 462);
+  }
+  ctx.shadowBlur = 8; ctx.shadowColor = '#ffd76a';
+  ctx.strokeStyle = 'rgba(255,215,106,' + (alpha * .5).toFixed(2) + ')';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(450, 500); ctx.lineTo(1150, 500); ctx.stroke();
+  ctx.restore();
+}
+
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now;
   if (perf.on) { perf.dt.push(dt); if (perf.dt.length > 600) perf.dt.shift(); }
+  if (S && S.hitStop && S.time < S.hitStop) { vt += dt; render(); requestAnimationFrame(loop); return; }
   vt += dt;
   if (S && (MODE === 'play')) update(dt);
   else if (S && (MODE === 'winning' || MODE === 'crashing')) { S.time += dt; updateFx(dt);
