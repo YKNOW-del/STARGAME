@@ -1551,20 +1551,18 @@ function drawOrbitRocks() {
 var gameEnterAnim = 1;
 function drawEnterAnim() {
   if (gameEnterAnim >= 1) return;
-  var t = gameEnterAnim, e = 1 - Math.pow(1 - t, 3);
-  var sc = .3 + .7 * e, rot = (1 - e) * 1.2;
-  ctx.fillStyle = 'rgba(3,5,12,' + (1 - e).toFixed(2) + ')';
-  ctx.fillRect(0, 0, 1600, 900);
+  var t = gameEnterAnim;
+  // ease-in-out：前 30% 慢启动，后 70% 弹性减速
+  var e = t < .3 ? t * t / .09 * .1 : .1 + (t - .3) / .7 * .9;
+  e = Math.min(1, e);
+  // 更戏剧性：起始 0.05x、旋转 2.5 rad、透明 0
+  var sc = .05 + .95 * e;
+  var rot = (1 - e) * 2.5;
+  var al = Math.min(1, e * 1.8);
+  // 变换应用于整个后续绘制
   ctx.save();
-  ctx.globalAlpha = e;
   ctx.translate(CX, CY); ctx.rotate(rot); ctx.scale(sc, sc); ctx.translate(-CX, -CY);
-  drawSun();
-  for (var k = 0; k < 4; k++) {
-    ctx.strokeStyle = 'rgba(160,180,255,.15)'; ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.arc(CX, CY, RADII[k], 0, 6.29); ctx.stroke();
-  }
-  drawOrbitRocks();
-  ctx.restore();
+  ctx.globalAlpha = al;
 }
 
 function drawBoard() {
@@ -1870,10 +1868,26 @@ function render() {
   if (S && S.shake > 0 && !SAVE.settings.reducedMotion) ctx.translate(rnd(-1, 1) * S.shake * 8, rnd(-1, 1) * S.shake * 8);
   drawSun();
   if (S) {
+    drawEnterAnim();   // <1 时开启变换和透明度，=1 时无操作
+    drawBoard(); drawEffects(); drawConstellation(); drawComboFlash(); drawTransition(); drawTutorial(); drawVignette(); drawPerf();
     if (gameEnterAnim < 1) {
-      drawVignette(); drawEnterAnim();
-    } else {
-      drawBoard(); drawEffects(); drawConstellation(); drawComboFlash(); drawTransition(); drawTutorial(); drawVignette(); drawPerf();
+      ctx.restore();   // 关闭入场变换
+      // 暗幕渐透（叠在场景之上，制造"从宇宙聚焦"感）
+      var eAl = 1 - Math.min(1, gameEnterAnim * 1.5);
+      ctx.fillStyle = 'rgba(3,5,12,' + (eAl * .75).toFixed(2) + ')';
+      ctx.fillRect(0, 0, 1600, 900);
+      // 星光射线闪
+      if (gameEnterAnim < .3) {
+        var burst = (0.3 - gameEnterAnim) / .3;
+        ctx.strokeStyle = 'rgba(200,220,255,' + (burst * .25).toFixed(2) + ')';
+        ctx.lineWidth = 1.5;
+        for (var i3 = 0; i3 < 12; i3++) {
+          var ra = i3 * Math.PI / 6 + vt * 2;
+          ctx.beginPath(); ctx.moveTo(CX + Math.cos(ra) * 200, CY + Math.sin(ra) * 200);
+          ctx.lineTo(CX + Math.cos(ra) * 500 * (1 - burst), CY + Math.sin(ra) * 500 * (1 - burst));
+          ctx.stroke();
+        }
+      }
     }
     // 顶部关卡进度条（背景即进度条 v0.1：星云已随 p 增强）
     ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(560, 876, 480, 5);
@@ -1944,7 +1958,7 @@ function drawTransition() {
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now;
-  if (gameEnterAnim < 1) gameEnterAnim = Math.min(1, gameEnterAnim + dt * 1.4);
+  if (gameEnterAnim < 1) gameEnterAnim = Math.min(1, gameEnterAnim + dt * 0.9);
   if (perf.on) { perf.dt.push(dt); if (perf.dt.length > 600) perf.dt.shift(); }
   if (S && S.hitStop && S.time < S.hitStop) { vt += dt; render(); requestAnimationFrame(loop); return; }
   vt += dt;
