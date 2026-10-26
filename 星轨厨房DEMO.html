@@ -459,6 +459,7 @@ function startLevel(idx) {
   showTransition(['第一章 · 类地行星','第二章 · 外太阳系','第三章 · 恒星演化'][Math.min(2, Math.floor(idx / 3))], '第' + (idx + 1) + '关 · ' + S.lvl.name);
   elHint.textContent = S.lvl.hint;
   updateHUD();
+  gameEnterAnim = 0;
   S.tut = (TUT[idx + 1] && !SAVE.tut[idx + 1]) ? { steps: TUT[idx + 1], idx: -1, mark: null } : null;
   if (S.tut) advanceTut();
   refreshTutSkip();
@@ -487,6 +488,7 @@ function enterGame(st, hint) {
   showTransition(S.lvl.name, hint.slice(0, 30));
   elHint.textContent = hint;
   refreshTutSkip(); updateHUD();
+  gameEnterAnim = 0;
 }
 function startEndless() {
   const lvl = { name: '♾ 无尽模式', pool: [0, 2], order: [],
@@ -1518,6 +1520,53 @@ function drawBody(x, y, r, t, alpha, v) {
   }
   ctx.restore();
 }
+// orbit_rocks.js — insert before drawBoard, call inside drawBoard end
+// rocks definition
+var ORBIT_ROCKS = (function() {
+  var rocks = [];
+  for (var k = 0; k < 4; k++) {
+    var cnt = 4 + Math.floor(Math.random() * 3);
+    for (var i2 = 0; i2 < cnt; i2++) {
+      rocks.push({ orbit: k, ang: Math.random() * 6.283,
+        speed: rnd(.015, .04) * (Math.random() < .5 ? 1 : -1),
+        size: rnd(3, 7), alpha: rnd(.12, .3), off: rnd(-14, 14) });
+    }
+  }
+  return rocks;
+})();
+function drawOrbitRocks() {
+  var T = bodyTex(2);
+  ORBIT_ROCKS.forEach(function(rk) {
+    var a = rk.ang + vt * rk.speed;
+    var rad = RADII[rk.orbit] + rk.off;
+    var x = CX + rad * Math.cos(a), y = CY + rad * Math.sin(a);
+    ctx.save(); ctx.globalAlpha = rk.alpha;
+    ctx.translate(x, y); ctx.rotate(a * 2);
+    ctx.drawImage(T.tex, -rk.size, -rk.size, rk.size * 2, rk.size * 2);
+    ctx.restore();
+  });
+}
+
+// enter animation
+var gameEnterAnim = 1;
+function drawEnterAnim() {
+  if (gameEnterAnim >= 1) return;
+  var t = gameEnterAnim, e = 1 - Math.pow(1 - t, 3);
+  var sc = .3 + .7 * e, rot = (1 - e) * 1.2;
+  ctx.fillStyle = 'rgba(3,5,12,' + (1 - e).toFixed(2) + ')';
+  ctx.fillRect(0, 0, 1600, 900);
+  ctx.save();
+  ctx.globalAlpha = e;
+  ctx.translate(CX, CY); ctx.rotate(rot); ctx.scale(sc, sc); ctx.translate(-CX, -CY);
+  drawSun();
+  for (var k = 0; k < 4; k++) {
+    ctx.strokeStyle = 'rgba(160,180,255,.15)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(CX, CY, RADII[k], 0, 6.29); ctx.stroke();
+  }
+  drawOrbitRocks();
+  ctx.restore();
+}
+
 function drawBoard() {
   // 轨道与槽位
   for (let k = 0; k < 4; k++) {
@@ -1601,6 +1650,7 @@ function drawBoard() {
       ctx.fillText(txt, mouse[0] + 20, mouse[1] - 21);
     }
   }
+  drawOrbitRocks();
 }
 function drawEffects() {
   // 合成：双体收缩 + 产物光环
@@ -1820,7 +1870,11 @@ function render() {
   if (S && S.shake > 0 && !SAVE.settings.reducedMotion) ctx.translate(rnd(-1, 1) * S.shake * 8, rnd(-1, 1) * S.shake * 8);
   drawSun();
   if (S) {
-    drawBoard(); drawEffects(); drawConstellation(); drawComboFlash(); drawTransition(); drawTutorial(); drawVignette(); drawPerf();
+    if (gameEnterAnim < 1) {
+      drawVignette(); drawEnterAnim();
+    } else {
+      drawBoard(); drawEffects(); drawConstellation(); drawComboFlash(); drawTransition(); drawTutorial(); drawVignette(); drawPerf();
+    }
     // 顶部关卡进度条（背景即进度条 v0.1：星云已随 p 增强）
     ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(560, 876, 480, 5);
     ctx.fillStyle = '#ffd76a'; ctx.fillRect(560, 876, 480 * p, 5);
@@ -1890,6 +1944,7 @@ function drawTransition() {
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (gameEnterAnim < 1) gameEnterAnim = Math.min(1, gameEnterAnim + dt * 1.4);
   if (perf.on) { perf.dt.push(dt); if (perf.dt.length > 600) perf.dt.shift(); }
   if (S && S.hitStop && S.time < S.hitStop) { vt += dt; render(); requestAnimationFrame(loop); return; }
   vt += dt;
