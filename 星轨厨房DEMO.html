@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>星轨厨房 · DEMO v0.4</title>
+<title>星轨厨房 · v0.6.2</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; background: #04060d; overflow: hidden;
@@ -229,7 +229,7 @@ document.addEventListener('pointerdown', e => {
   if (!S || !S.tut || MODE !== 'play') return;
   if (e.target.closest && e.target.closest('#tutSkip')) return;
   const st = S.tut.steps[S.tut.idx];
-  if (st && st.wait === 'any' && performance.now() - (st._at || 0) > 400) advanceTut();
+  if (st && st.wait === 'any' && performance.now() - (st._at || 0) > 200) advanceTut();
 }, true);
 document.getElementById('tutSkip').addEventListener('click', e => {
   e.stopPropagation(); sfx.click(); finishTutorial(); toast('教程已跳过，可从主菜单重新查看');
@@ -1041,7 +1041,7 @@ function showMenu() {
       '<div class="st">' + (lock ? '🔒 未解锁' : starStr(st)) + '</div></div>';
   }
   elOverlay.innerHTML = '<div class="panel"><h1>星轨厨房</h1>' +
-    '<div class="sub">轨道合成 × 订单交付 —— 天文题材益智网页游戏 · DEMO v0.4</div>' +
+    '<div class="sub">轨道合成 × 订单交付 —— 天文题材益智网页游戏 · v0.6.2</div>' +
     '<div class="levels">' + lv + '</div>' +
     '<div class="row" style="margin-top:4px">' +
     '<button class="btn" data-act="dex">📖 图鉴 ' + SAVE.dex.length + '/' + DEX.length + '</button>' +
@@ -1059,7 +1059,7 @@ function showMenu() {
     '<li>满盘且无路可走 = <b>引力崩溃</b>；弃置与潮汐滑移是两种腾挪手段</li>' +
     '<li>三星 = 通关 + 投放数达标 + 质量损失达标（时间不参与）</li>' +
     '<li>快捷键：1/2/3 选候选 · ESC 暂停 · 右键取消工具</li></ul></details>' +
-    '<div class="foot">DEMO v0.4 范围：核心循环 / 10 关三章（推导阈值）/ 订单与三星 / 陨石 / 超新星 / 黑洞 / 变体天体（冰卫星·脉冲星）/ 图鉴 / 本地排行榜 / 战绩海报 / 设置（音量·色弱·减动效）/ 新手教程 —— 未含：动态订单、每日挑战、无尽模式、成就</div></div>';
+    '<div class="foot">v0.6.2 范围：核心循环 / 10 关三章（推导阈值）/ 订单与三星 / 陨石 / 超新星 / 黑洞 / 变体天体（冰卫星·脉冲星）/ 图鉴 / 本地排行榜 / 战绩海报 / 设置（音量·色弱·减动效）/ 新手教程 —— 含动态订单、每日挑战、无尽模式、成就</div></div>';
   elOverlay.classList.add('show');
 }
 function showPause() {
