@@ -50,7 +50,8 @@
     pointer-events: none; white-space: nowrap; }
   #toast.show { opacity: 1; }
   #tutSkip { position: absolute; top: 66px; right: 16px; z-index: 6; display: none;
-    background: rgba(20,30,64,.85); border-color: rgba(255,215,106,.5); color: #ffd76a; font-size: 13px; }
+    background: rgba(20,30,64,.85); border-color: rgba(255,215,106,.5); color: #ffd76a; font-size: 13px;
+    letter-spacing: 1.5px; font-weight: 600; }
 
   /* ---------- 覆盖层 ---------- */
   #overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
@@ -1891,12 +1892,14 @@ function drawTutorial() {
     ctx.strokeStyle = 'rgba(255,215,106,' + a.toFixed(3) + ')'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.roundRect(r.x - 8, r.y - 8, r.w + 16, r.h + 16, 14); ctx.stroke();
   }
-  const font = '15.5px "Microsoft YaHei", sans-serif';
+  /* 排版：标题行 + 近白正文 17px + 0.4px 字距（letterSpacing 属画布状态，随 save/restore 隔离） */
+  ctx.letterSpacing = '0.4px';
+  const font = '17px "Microsoft YaHei", "PingFang SC", sans-serif';
   let lines = wrapText(st.text, 350, font);
   if (st.wait === 'any') lines = lines.concat(['▾ 点击任意处继续 ▾']);
   ctx.font = font;
   let tw = 0; lines.forEach(l => tw = Math.max(tw, ctx.measureText(l).width));
-  const bw = tw + 30, bh = lines.length * 23 + 26;
+  const bw = tw + 36, bh = lines.length * 27 + 56;
   let bx, by;
   if (r) {
     bx = Math.max(30, Math.min(1570 - bw, r.x + r.w / 2 - bw / 2));
@@ -1905,14 +1908,31 @@ function drawTutorial() {
   ctx.fillStyle = 'rgba(12,20,46,.96)'; ctx.strokeStyle = 'rgba(255,215,106,.7)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 12); ctx.fill(); ctx.stroke();
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.letterSpacing = '4px';
+  ctx.font = '600 12px "Microsoft YaHei", "PingFang SC", sans-serif';
+  ctx.fillStyle = 'rgba(158,178,255,.92)';
+  ctx.fillText('新手指引', bx + 18, by + 13);
+  ctx.strokeStyle = 'rgba(158,178,255,.28)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(bx + 18, by + 32); ctx.lineTo(bx + bw - 18, by + 32); ctx.stroke();
+  ctx.letterSpacing = '0.4px';
   lines.forEach((l, i2) => {
     const isHint = i2 === lines.length - 1 && st.wait === 'any';
-    ctx.fillStyle = isHint ? 'rgba(160,175,225,.9)' : '#ffe9a8';
-    ctx.fillText(l, bx + 15, by + 11 + i2 * 23);
+    if (isHint) {
+      const pa = Math.max(.35, .55 + .3 * Math.sin(vt * 3));
+      ctx.fillStyle = 'rgba(200,232,255,' + pa.toFixed(3) + ')';
+      ctx.letterSpacing = '1.5px';
+      ctx.font = '600 14px "Microsoft YaHei", "PingFang SC", sans-serif';
+    } else {
+      ctx.fillStyle = '#f2f6ff';
+      ctx.font = font;
+    }
+    ctx.fillText(l, bx + 18, by + 40 + i2 * 27);
+    ctx.letterSpacing = '0.4px';
   });
-  ctx.fillStyle = 'rgba(150,165,215,.75)'; ctx.font = '12px "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = 'rgba(150,165,215,.75)'; ctx.font = '12.5px "Cascadia Code", Consolas, monospace';
+  ctx.letterSpacing = '0px';
   ctx.textAlign = 'right'; ctx.textBaseline = 'top';
-  ctx.fillText((t.idx + 1) + '/' + t.steps.length, bx + bw - 10, by + bh - 16);
+  ctx.fillText((t.idx + 1) + ' / ' + t.steps.length, bx + bw - 12, by + bh - 18);
   if (r) {
     const tx = r.x + r.w / 2;
     let sy, ty;
