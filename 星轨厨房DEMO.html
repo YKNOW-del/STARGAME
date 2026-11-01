@@ -309,23 +309,91 @@ document.addEventListener('pointerdown', ensureAudio, { once:false });
 let BGM = null;
 function startBgm() {
   if (BGM || !AC || SAVE.settings.bgm <= 0 || SAVE.settings.muted) return;
-  const g = AC.createGain(); g.gain.value = 0.03 * SAVE.settings.bgm;
-  const flt = AC.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 900;
-  const oscs = [110, 164.81, 220].map((f, i) => {
-    const o = AC.createOscillator(); o.type = i === 2 ? 'sine' : 'triangle';
-    o.frequency.value = f; o.detune.value = (i - 1) * 4; o.connect(flt); o.start(); return o;
-  });
-  const lfo = AC.createOscillator(); lfo.frequency.value = 0.08;
-  const lg = AC.createGain(); lg.gain.value = 0.012 * SAVE.settings.bgm;
-  lfo.connect(lg); lg.connect(g.gain); lfo.start();
-  flt.connect(g); g.connect(AC.destination);
-  BGM = { oscs, g, lfo, lg };
+  var bus = AC.createGain(); bus.gain.value = 0;
+  var flt = AC.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 550; flt.Q.value = .3;
+  var dly = AC.createDelay(2.5); dly.delayTime.value = 1.2;
+  var dlyG = AC.createGain(); dlyG.gain.value = .25;
+  flt.connect(bus); dly.connect(dlyG); dlyG.connect(bus); dlyG.connect(dly);
+  bus.connect(AC.destination);
+  bus.gain.linearRampToValueAtTime(0.04 * SAVE.settings.bgm, AC.currentTime + 3);
+  var nodes = { oscs: [], timers: [], bus: bus, flt: flt, dly: dly, running: true };
+  // 和弦进行：Am → F → C → Em（0.55度每小节式）
+  var chords = [
+    [220.0, 261.6, 329.6],   // A3 C4 E4 (Am)
+    [174.6, 220.0, 261.6],   // F3 A3 C4 (F)
+    [130.8, 196.0, 261.6],   // C3 G3 C4 (C)
+    [164.8, 196.0, 246.9],   // E3 G3 B3 (Em)
+  ];
+  var ci = 0, ni = 0;
+  function playChord() {
+    if (!nodes.running) return;
+    var ch = chords[ci % chords.length]; ci++;
+    ch.forEach(function(f, vi) {
+      var o = AC.createOscillator(), vg = AC.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      o.detune.value = (Math.random() - .5) * 6;
+      var now = AC.currentTime;
+      vg.gain.setValueAtTime(0, now);
+      vg.gain.linearRampToValueAtTime(0.35 / (vi + 1), now + 2.5);   // 慢起音
+      vg.gain.linearRampToValueAtTime(0.01, now + 7.8);              // 慢释音
+      o.connect(vg); vg.connect(flt); vg.connect(dly);
+      o.start(now); o.stop(now + 8.5);
+      nodes.oscs.push(o);
+      if (nodes.oscs.length > 40) nodes.oscs.splice(0, nodes.oscs.length - 40);
+    });
+  }
+  function playNote() {
+    if (!nodes.running) return;
+    var ch = chords[ci % chords.length];
+    var f = ch[ni % ch.length] * 2;
+    ni++;
+    var o = AC.createOscillator(), vg = AC.createGain();
+    o.type = 'sine'; o.frequency.value = f;
+    var now = AC.currentTime;
+    vg.gain.setValueAtTime(0, now);
+    vg.gain.linearRampToValueAtTime(0.08, now + .8);
+    vg.gain.linearRampToValueAtTime(0.001, now + 2.8);
+    o.connect(vg); vg.connect(flt); vg.connect(dly);
+    o.start(now); o.stop(now + 3);
+    nodes.oscs.push(o);
+    nodes.timers.push(setTimeout(playNote, 2200 + Math.random() * 1800));
+  }
+  playChord();
+  nodes.timers.push(setInterval(playChord, 8000));
+  nodes.timers.push(setTimeout(playNote, 4000));
+  BGM = nodes;
 }
 function updateBgm() {
+  if (!AC) return;
   if (!BGM) { startBgm(); return; }
-  const v = (SAVE.settings.muted || SAVE.settings.bgm <= 0) ? 0 : 0.03 * SAVE.settings.bgm;
-  BGM.g.gain.value = v; BGM.lg.gain.value = v * 0.4;
-  if (v === 0) { BGM.oscs.forEach(o => o.stop()); BGM.lfo.stop(); BGM = null; }
+  var v = (SAVE.settings.muted || SAVE.settings.bgm <= 0) ? 0 : 0.04 * SAVE.settings.bgm;
+  /* 淡出途中重新开声（滑条从 0 连续拖回）：清理旧实例后重启，避免僵尸静音 */
+  if (v > 0 && !BGM.running) {
+    var old = BGM; BGM = null;
+    old.running = false;
+    old.timers.forEach(function(t) { clearInterval(t); clearTimeout(t); });
+    old.oscs.forEach(function(o) { try { o.stop(); } catch(e) {} });
+    old.bus.gain.cancelScheduledValues(AC.currentTime);
+    old.bus.gain.linearRampToValueAtTime(0, AC.currentTime + .15);
+    setTimeout(function() { try { old.bus.disconnect(); } catch(e) {} }, 300);
+    startBgm();
+    return;
+  }
+  BGM.bus.gain.cancelScheduledValues(AC.currentTime);
+  BGM.bus.gain.setValueAtTime(BGM.bus.gain.value, AC.currentTime);
+  BGM.bus.gain.linearRampToValueAtTime(v, AC.currentTime + .3);
+  if (v === 0 && BGM.running) {
+    BGM.running = false;
+    BGM.timers.forEach(function(t) { clearInterval(t); clearTimeout(t); });
+    var now = AC.currentTime;
+    BGM.bus.gain.linearRampToValueAtTime(0, now + 1);
+    var dying = BGM;
+    setTimeout(function() {
+      dying.oscs.forEach(function(o) { try { o.stop(); } catch(e) {} });
+      try { dying.bus.disconnect(); } catch(e) {}
+      if (BGM === dying) BGM = null;
+    }, 1200);
+  }
 }
 
 /* =============== DOM =============== */
