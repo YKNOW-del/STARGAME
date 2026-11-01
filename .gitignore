@@ -9,3 +9,10 @@ Thumbs.db
 *.apk
 *.aab
 rnbuild/
+
+# 移动端内容（仅本地保留，不入库）
+mobile/
+mobile-native/
+*.apk
+_shots/安卓版*
+_shots/移动版*
