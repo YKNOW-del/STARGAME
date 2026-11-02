@@ -1,6 +1,6 @@
 
 import { ok } from './_helpers.js';
-import { makeEngine } from '../../../mobile-native/src/game/engine.js';
+import { makeEngine } from './engine.fixture.js';
 export const name = 'TC-05 存储不可用降级';
 export async function run() {
   const throwing = { async load() { throw new Error('localStorage disabled'); }, async persist() { throw new Error('full'); } };

@@ -1,6 +1,6 @@
 
 import { ok } from './_helpers.js';
-import C from '../../../mobile-native/src/core/starchef-core.js';
+import C from '../starchef-core.js';
 export const name = 'TC-12 逻辑层性能基准（NFR-P02 等效）';
 export async function run() {
   const board = C.newBoard();

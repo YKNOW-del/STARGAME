@@ -4,7 +4,7 @@ export function memStorage() {
   return { async load() { return data; }, async persist(s) { data = JSON.parse(JSON.stringify(s)); } };
 }
 export async function newEngine() {
-  const { makeEngine } = await import('../../../mobile-native/src/game/engine.js');
+  const { makeEngine } = await import('./engine.fixture.js');
   const eng = makeEngine(memStorage());
   await eng.init();
   return eng;

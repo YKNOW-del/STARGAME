@@ -1,6 +1,6 @@
 
 import { ok, eq } from './_helpers.js';
-import C from '../../../mobile-native/src/core/starchef-core.js';
+import C from '../starchef-core.js';
 export const name = 'TC-03 三星边界';
 export async function run() {
   const lv = { maxDrops: 30, maxLossKg: 1e20 };

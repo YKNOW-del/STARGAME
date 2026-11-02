@@ -1,6 +1,6 @@
 import { newEngine, ok, eq } from './_helpers.js';
-import { slotPos } from '../../../mobile-native/src/game/engine.js';
-import C from '../../../mobile-native/src/core/starchef-core.js';
+import { slotPos } from './engine.fixture.js';
+import C from '../starchef-core.js';
 const tap = (eng, k, i) => eng.tapBoard(...slotPos(k, i));
 
 export const name = 'TC-02 引力崩溃判定';

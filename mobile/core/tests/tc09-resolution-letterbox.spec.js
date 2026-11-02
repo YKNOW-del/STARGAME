@@ -1,6 +1,6 @@
 
 import { ok } from './_helpers.js';
-import { LAYOUT, slotPos } from '../../../mobile-native/src/game/engine.js';
+import { LAYOUT, slotPos } from './engine.fixture.js';
 export const name = 'TC-09 分辨率映射';
 export async function run() {
   // 引擎级可验的几何部分：所有槽位坐标都落在逻辑画布内且轨道半径单调

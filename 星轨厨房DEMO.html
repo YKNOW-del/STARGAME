@@ -1600,13 +1600,6 @@ function drawBody(x, y, r, t, alpha, v) {
     ctx.strokeStyle = tg; ctx.lineWidth = 4; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx / L * 34, y + dy / L * 34); ctx.stroke();
   }
-  if (t === 1) { // 彗尾背离恒星
-    const dx = x - CX, dy = y - CY, L = Math.hypot(dx, dy) || 1;
-    const tg = ctx.createLinearGradient(x, y, x + dx / L * 34, y + dy / L * 34);
-    tg.addColorStop(0, 'rgba(160,230,255,.55)'); tg.addColorStop(1, 'rgba(160,230,255,0)');
-    ctx.strokeStyle = tg; ctx.lineWidth = 4; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx / L * 34, y + dy / L * 34); ctx.stroke();
-  }
   if (t === 11) { // 土星环（前半，含卡西尼缝）
     ctx.save(); ctx.translate(x, y); ctx.rotate(-.42);
     ctx.strokeStyle = 'rgba(255,246,200,.8)'; ctx.lineWidth = Math.max(2, r * .13);

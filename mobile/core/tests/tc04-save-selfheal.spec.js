@@ -1,6 +1,6 @@
 
 import { ok } from './_helpers.js';
-import { makeEngine } from '../../../mobile-native/src/game/engine.js';
+import { makeEngine } from './engine.fixture.js';
 export const name = 'TC-04 存档自愈';
 export async function run() {
   // load 返回损坏结构（缺 unlocked）→ 回退默认档，不抛异常
