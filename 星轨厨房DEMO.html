@@ -30,7 +30,9 @@
   #bottombar { position: absolute; left: 0; right: 0; bottom: 0; height: 92px; display: flex;
     align-items: center; justify-content: center; gap: 26px;
     background: linear-gradient(0deg, rgba(6,10,26,.92), rgba(6,10,26,.55) 80%, transparent);
-    border-radius: 0 0 10px 10px; }
+    border-radius: 0 0 10px 10px;
+    pointer-events: none; }   /* 容器透明区点击穿透到画布：最下轨道槽位不再被底栏遮挡 */
+  #bottombar .btn, #bottombar .card { pointer-events: auto; }
   #tools { display: flex; flex-direction: column; gap: 6px; }
   #tools .btn { font-size: 13px; padding: 4px 10px; }
   #tools .btn.active { background: rgba(255,215,106,.25); border-color: #ffd76a; color: #ffd76a; }
@@ -900,7 +902,7 @@ function hitSlot(x, y) {
     const [sx, sy] = slotPos(k, i);
     const b = S.board[k][i];
     const d = Math.hypot(x - sx, y - sy);
-    const th = Math.max(26, (b ? bodyR(b.t) : 10) + 8);
+    const th = b ? Math.max(26, bodyR(b.t) + 8) : 34;   // 空槽命中圈放宽：底轨槽位贴近底栏，给下方留足可点区
     if (d < th && d < bd) { bd = d; best = [k, i]; }
   }
   return best;
