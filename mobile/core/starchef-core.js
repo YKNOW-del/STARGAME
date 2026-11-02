@@ -50,7 +50,7 @@
 
   // 第 1–3 教学关阈值宽松；第 4 关起 maxDrops=⌈1.5×D_min⌉、maxLossKg=0.2×Σ订单质量（需求文档 5.5）
   const LEVELS = [
-    { name: '初生星云', hint: '点候选选天体 → 点轨道空槽投放 · 相邻同级自动合成',
+    { name: '初生星云', hint: '点候选 → 点空槽投放 · 同轨相邻同级 ×2 → 升一级并迁往外轨',
       pool: [0, 2], weights: [3, 2, 2], order: [{ tier: 2, count: 2 }], maxDrops: 6, maxLossKg: 1e21, meteor: 0 },
     { name: '第一份订单', hint: '点金圈天体完成交付 · 陨石有 3 秒红色预警',
       pool: [0, 4], weights: [3, 3, 2, 2, 4], order: [{ tier: 2, count: 2 }, { tier: 4, count: 1 }], maxDrops: 22, maxLossKg: 8e23, meteor: 32 },

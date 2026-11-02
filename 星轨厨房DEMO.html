@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>星轨厨房 · v0.6.2</title>
+<title>星轨厨房 · v0.6.4</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; background: #04060d; overflow: hidden;
@@ -86,6 +86,16 @@
   .dexcell .dot { width: 22px; height: 22px; border-radius: 50%; }
   .dexcell .nm { font-size: 11.5px; color: #cfd8ff; }
   .dexcell:not(.un) .nm { color: #5a6690; }
+  .panel.merge-panel { width: 880px; max-width: 92%; padding: 26px 34px; }
+  .mergegrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px;
+    max-height: 470px; overflow-y: auto; padding: 2px 6px 2px 2px; }
+  .mergeitem { display: grid; grid-template-columns: minmax(0,1fr) 28px minmax(0,1fr); align-items: center;
+    gap: 6px; padding: 8px 10px; border: 1px solid rgba(130,150,255,.22); border-radius: 10px;
+    background: rgba(20,30,64,.46); text-align: left; }
+  .mergebody { display: flex; align-items: center; gap: 7px; color: #dfe6ff; font-size: 13px; white-space: nowrap; }
+  .mergebody .dot { width: 20px; height: 20px; border-radius: 50%; flex: none; }
+  .mergearrow { color: #ffd76a; font-size: 18px; text-align: center; }
+  .merge-note { margin: -8px 0 14px; color: #aab6e8; font-size: 13.5px; line-height: 1.7; }
   table.lb { margin: 0 auto; border-collapse: collapse; font-size: 13.5px; }
   table.lb th, table.lb td { padding: 5px 12px; border-bottom: 1px solid rgba(130,150,255,.2); }
   table.lb th { color: #8896c8; font-weight: 600; }
@@ -105,6 +115,7 @@
     <div id="lvlname"></div>
     <div id="stats"></div>
     <div id="hint"></div>
+    <button class="btn" id="bMerge">🧬 合成图谱</button>
     <button class="btn" id="bDex">📖 图鉴</button>
     <button class="btn" id="bSet">⚙</button>
     <button class="btn" id="bPause">⏸ 暂停</button>
@@ -168,13 +179,14 @@ function warnRect() {
 const TUT = {
   1: [ // 第 1 关：候选池 → 投放 → 交付 → 自动合成
     { text: '欢迎来到星轨厨房！我是你的领航员。这一关的目标：为订单星座合成 2 颗小行星。跟着提示，几步学会核心操作。', wait: 'any' },
+    { text: '全部 14 条合成关系已经单独整理成「合成图谱」。点击顶部的按钮打开图谱，先看看完整合成链。', wait: 'merge-guide', hl: { dom: '#bMerge' } },
     { text: '这是候选池——每次投放都从这里选天体。点击任意一张卡片。', wait: ['pool-select', 'placed'], hl: { dom: '#pool' } },
     { text: '点击高亮的空槽位，把这颗小行星投放到轨道上。', wait: 'placed', pool: [2, 2, 2], hl: { fn: () => firstEmptySlotRect([0, 1]) } },
     { text: '带金色圆圈的天体正是订单需要的！点击它完成交付。', wait: 'delivered', hl: { fn: deliverableRect } },
     { text: '看到了吗？星座被点亮了一颗——全部点亮即通关。', wait: 'any', hl: { rect: TUT_CONS } },
     { text: '接下来学合成：再投放一颗小行星，放哪个空位都行。', wait: 'placed', pool: [2, 2, 2], mark: true },
-    { text: '把下一颗小行星放到刚才那颗的旁边（高亮处）——相邻同级会自动合成并迁往外轨！', wait: 'merged', pool: [2, 2, 2], hl: { fn: markNeighborRect } },
-    { text: '两颗小行星合成了冥王星！订单还差 1 颗小行星——靠自己完成吧 ✨', wait: 'any' },
+    { text: '把下一颗小行星放到刚才那颗的旁边（高亮处）。注意三个条件：同轨道＋相邻＋同级。满足后会自动合成并迁往外轨！', wait: 'merged', pool: [2, 2, 2], hl: { fn: markNeighborRect } },
+    { text: '规律验证成功：小行星 ×2 → 冥王星，并向外迁移了一圈。后续天体都遵循“两颗同级合成下一等级”的规律。订单还差 1 颗小行星——靠自己完成吧 ✨', wait: 'any' },
   ],
   2: [ // 第 2 关：订单星座面板 + 陨石预警
     { text: '第 2 关：订单变复杂了。右上角的订单星座告诉你需要交付什么——每颗星下方有名称与数量进度。', wait: 'any', hl: { rect: TUT_CONS } },
@@ -261,6 +273,12 @@ function loadSave() {
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) {} }
 let SAVE = loadSave();
 if (!SAVE.tut) SAVE.tut = {};
+// v0.6.4：合成规律独立为完整图谱；仅重播一次第一关教程，不影响其他进度。
+if (!SAVE.tutorialMergeGuideV2) {
+  delete SAVE.tut[1];
+  SAVE.tutorialMergeGuideV2 = true;
+  persist();
+}
 
 /* =============== 音频（Web Audio 实时合成） =============== */
 let AC = null;
@@ -986,6 +1004,13 @@ document.getElementById('bMute').addEventListener('click', () => {
   SAVE.settings.muted = !SAVE.settings.muted; persist(); updateBgm(); updateMuteIcon();
 });
 document.getElementById('bMenu').addEventListener('click', () => showMenu());
+document.getElementById('bMerge').addEventListener('click', () => {
+  if (!S || !['play', 'pause'].includes(MODE)) return;
+  if (MODE === 'play') MODE = 'pause';
+  tutEvent('merge-guide');
+  sfx.click();
+  showMergeGuide(true);
+});
 document.getElementById('bDex').addEventListener('click', () => {
   if (!S) return; if (MODE === 'play') pauseGame(); showDex(true);
 });
@@ -1109,6 +1134,27 @@ function showSettings(fromPause) {
     rd.readAsText(f);
   });
 }
+function mergeBodyChip(t, quantity) {
+  const b = BODIES[t];
+  return '<span class="mergebody"><span class="dot" style="background:radial-gradient(circle at 35% 35%,' +
+    b.c1 + ',' + b.c2 + ')"></span><b>' + b.name + (quantity ? ' ×2' : '') + '</b></span>';
+}
+function showMergeGuide(fromPause) {
+  let rules = '';
+  for (let t = 0; t < BODIES.length - 1; t++) {
+    rules += '<div class="mergeitem">' + mergeBodyChip(t, true) +
+      '<span class="mergearrow">→</span>' + mergeBodyChip(t + 1, false) + '</div>';
+  }
+  elOverlay.innerHTML = '<div class="panel merge-panel"><h2>🧬 合成图谱</h2>' +
+    '<div class="merge-note"><b>统一规律：</b>同一轨道上彼此相邻的两颗同级天体自动合成，' +
+    '产物升一级并迁往外一圈的空槽位；不同轨道、不同等级或不相邻均不会合成。</div>' +
+    '<div class="mergegrid">' + rules + '</div>' +
+    '<div class="foot">共 14 条合成关系 · 黑洞为最高等级，不能继续合成</div>' +
+    '<div class="row">' + (fromPause
+      ? '<button class="btn big gold" data-act="back-pause">返回暂停</button>'
+      : '<button class="btn big gold" data-act="menu">返回菜单</button>') + '</div></div>';
+  elOverlay.classList.add('show');
+}
 function showMenu() {
   MODE = 'menu'; S = null;
   refreshTutSkip();
@@ -1123,10 +1169,11 @@ function showMenu() {
       '<div class="st">' + (lock ? '🔒 未解锁' : starStr(st)) + '</div></div>';
   }
   elOverlay.innerHTML = '<div class="panel"><h1>星轨厨房</h1>' +
-    '<div class="sub">轨道合成 × 订单交付 —— 天文题材益智网页游戏 · v0.6.2</div>' +
+    '<div class="sub">轨道合成 × 订单交付 —— 天文题材益智网页游戏 · v0.6.4</div>' +
     '<div class="levels">' + lv + '</div>' +
     '<div class="row" style="margin-top:4px">' +
     '<button class="btn" data-act="dex">📖 图鉴 ' + SAVE.dex.length + '/' + DEX.length + '</button>' +
+    '<button class="btn" data-act="merge">🧬 合成图谱</button>' +
     '<button class="btn" data-act="board">🏆 排行榜</button>' +
     '<button class="btn" data-act="settings">⚙ 设置</button>' +
     '<button class="btn" data-act="retut">🎓 重看教程</button></div>' +
@@ -1141,7 +1188,7 @@ function showMenu() {
     '<li>满盘且无路可走 = <b>引力崩溃</b>；弃置与潮汐滑移是两种腾挪手段</li>' +
     '<li>三星 = 通关 + 投放数达标 + 质量损失达标（时间不参与）</li>' +
     '<li>快捷键：1/2/3 选候选 · ESC 暂停 · 右键取消工具</li></ul></details>' +
-    '<div class="foot">v0.6.2 范围：核心循环 / 10 关三章（推导阈值）/ 订单与三星 / 陨石 / 超新星 / 黑洞 / 变体天体（冰卫星·脉冲星）/ 图鉴 / 本地排行榜 / 战绩海报 / 设置（音量·色弱·减动效）/ 新手教程 —— 含动态订单、每日挑战、无尽模式、成就</div></div>';
+    '<div class="foot">v0.6.4 范围：核心循环 / 10 关三章（推导阈值）/ 订单与三星 / 陨石 / 超新星 / 黑洞 / 变体天体（冰卫星·脉冲星）/ 合成图谱 / 图鉴 / 本地排行榜 / 战绩海报 / 设置（音量·色弱·减动效）/ 新手教程 —— 含动态订单、每日挑战、无尽模式、成就</div></div>';
   elOverlay.classList.add('show');
 }
 function showPause() {
@@ -1149,7 +1196,8 @@ function showPause() {
     '<div class="row"><button class="btn big gold" data-act="resume">继续</button>' +
     '<button class="btn big" data-act="restart">重新开始</button>' +
     '<button class="btn big" data-act="menu">返回菜单</button></div>' +
-    '<div class="row" style="margin-top:10px"><button class="btn" data-act="dex-p">📖 图鉴</button>' +
+    '<div class="row" style="margin-top:10px"><button class="btn" data-act="merge-p">🧬 合成图谱</button>' +
+    '<button class="btn" data-act="dex-p">📖 图鉴</button>' +
     '<button class="btn" data-act="settings-p">⚙ 设置</button></div></div>';
   elOverlay.classList.add('show');
 }
@@ -1313,6 +1361,8 @@ elOverlay.addEventListener('click', e => {
     else startLevel(S ? S.lvlIdx : 0); }
   else if (act === 'menu') showMenu();
   else if (act === 'retut') { SAVE.tut = {}; persist(); startLevel(0); }
+  else if (act === 'merge') showMergeGuide(false);
+  else if (act === 'merge-p') showMergeGuide(true);
   else if (act === 'endless') startEndless();
   else if (act === 'daily') startDaily();
   else if (act === 'dynamic') startDynamic();
